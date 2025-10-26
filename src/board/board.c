@@ -12,7 +12,7 @@
 #include "board-config.h"
 #include "lpm-board.h"
 #include "board.h"
-#include "config.h"
+#include "../app/config.h"
 
 extern SX1276_t SX1276;
 
@@ -179,8 +179,8 @@ void LpmExitStopMode(void)
 void LpmEnterOffMode(void)
 {
     SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
-    PWR->CR1 |= PWR_CR1_LPSDSR;
-    PWR->CR1 |= PWR_CR1_CWUF;
+    PWR->CR |= PWR_CR_LPSDSR;
+    PWR->CR |= PWR_CR_CWUF;
     __WFI();
 }
 

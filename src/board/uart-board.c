@@ -3,6 +3,7 @@
 #include "utilities.h"
 #include "board.h"
 #include "gpio.h"
+#include "gpio-board.h"
 #include "uart-board.h"
 
 #define UART_TX_FIFO_SIZE 1024

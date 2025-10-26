@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include "lorawan_region.h"
 #include "lorawan_region_au915.h"
 

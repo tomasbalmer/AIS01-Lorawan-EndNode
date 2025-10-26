@@ -5,6 +5,16 @@
 #include "pinName-board.h"
 #include "system/gpio.h"
 
+/* GPIO Alternate Function definitions for STM32L072 */
+#define GPIO_AF0_SPI1       0x00U
+#define GPIO_AF0_SPI2       0x00U
+#define GPIO_AF1_SPI1       0x01U
+#define GPIO_AF2_LPUART1    0x02U
+#define GPIO_AF4_I2C1       0x04U
+#define GPIO_AF4_USART1     0x04U
+#define GPIO_AF4_USART2     0x04U
+#define GPIO_AF5_I2C2       0x05U
+
 void GpioMcuInit(Gpio_t *obj, PinNames pin, PinModes mode, PinConfigs config, PinTypes type, uint32_t value);
 void GpioMcuSetContext(Gpio_t *obj, void *context);
 void GpioMcuSetInterrupt(Gpio_t *obj, IrqModes irqMode, IrqPriorities irqPriority, GpioIrqHandler *irqHandler);

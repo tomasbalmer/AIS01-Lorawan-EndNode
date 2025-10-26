@@ -21,6 +21,7 @@
  * \author    Gregory Cristian ( Semtech )
  */
 #include <stdbool.h>
+#include "pinName-board.h"
 #include "adc-board.h"
 
 /*!

@@ -100,6 +100,15 @@ extern "C"
 
 #define MCU_PINS MCU_PIN_DEFS
 
+/*!
+ * Pin names enumeration
+ */
+typedef enum
+{
+    MCU_PINS,
+    NC = 0xFF  /* Not Connected */
+} PinNames;
+
 #ifdef __cplusplus
 }
 #endif

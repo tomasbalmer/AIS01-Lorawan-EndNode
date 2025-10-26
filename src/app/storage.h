@@ -10,8 +10,7 @@
 #define __STORAGE_H__
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif
 
 #include <stdint.h>

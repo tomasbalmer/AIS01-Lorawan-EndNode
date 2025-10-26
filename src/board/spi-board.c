@@ -1,6 +1,7 @@
 #include "stm32l0xx.h"
 #include "utilities.h"
 #include "gpio.h"
+#include "gpio-board.h"
 #include "spi-board.h"
 
 #ifndef SPI_DATASIZE_8BIT

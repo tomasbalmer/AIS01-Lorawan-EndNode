@@ -1,3 +1,4 @@
+#include "stm32l072xx.h"
 #include "stm32l0xx.h"
 #include "utilities.h"
 #include "gpio-board.h"
@@ -168,7 +169,7 @@ void GpioMcuSetInterrupt(Gpio_t *obj, IrqModes irqMode, IrqPriorities irqPriorit
         return;
     }
 
-    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGCOMPEN;
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
 
     uint32_t extiIndex = pinNum >> 2;
     uint32_t extiShift = (pinNum & 0x3U) * 4U;

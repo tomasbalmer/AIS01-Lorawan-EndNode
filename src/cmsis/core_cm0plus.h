@@ -160,8 +160,32 @@
 
 #endif
 
-#include "core_cmInstr.h"                /* Core Instruction Access */
-#include "core_cmFunc.h"                 /* Core Function Access */
+/* Commented out - not needed for this minimal CMSIS implementation */
+/* #include "core_cmInstr.h" */            /* Core Instruction Access */
+/* #include "core_cmFunc.h" */             /* Core Function Access */
+
+/* Minimal stub definitions for core functions */
+#ifndef __DSB
+#define __DSB() __asm__ volatile ("dsb" ::: "memory")
+#endif
+#ifndef __NOP
+#define __NOP() __asm__ volatile ("nop")
+#endif
+#ifndef __WFI
+#define __WFI() __asm__ volatile ("wfi")
+#endif
+#ifndef __WFE
+#define __WFE() __asm__ volatile ("wfe")
+#endif
+#ifndef __SEV
+#define __SEV() __asm__ volatile ("sev")
+#endif
+#ifndef __ISB
+#define __ISB() __asm__ volatile ("isb" ::: "memory")
+#endif
+#ifndef __DMB
+#define __DMB() __asm__ volatile ("dmb" ::: "memory")
+#endif
 
 #ifdef __cplusplus
 }

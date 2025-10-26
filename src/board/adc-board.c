@@ -22,6 +22,7 @@
  */
 #include "stm32l0xx.h"
 #include "board-config.h"
+#include "gpio.h"
 #include "adc-board.h"
 
 ADC_HandleTypeDef AdcHandle;

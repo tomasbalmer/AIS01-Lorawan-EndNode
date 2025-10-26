@@ -52,6 +52,11 @@ extern "C"
 #define LORA_MAC_PUBLIC_SYNCWORD                    0x34
 
 /*!
+ * Mid-band frequency threshold (525 MHz)
+ */
+#define RF_MID_BAND_THRESH                          525000000
+
+/*!
  * Radio FSK modem parameters
  */
 typedef struct
@@ -157,6 +162,11 @@ typedef void ( DioIrqHandler )( void* context );
 /*
  * SX1276 definitions
  */
+
+/*!
+ * \brief SX1276 global object instance
+ */
+extern SX1276_t SX1276;
 
 /*!
  * ============================================================================

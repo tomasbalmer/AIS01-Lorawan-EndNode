@@ -28,6 +28,7 @@
 #include "utilities.h"
 #include "board.h"
 #include "rtc-board.h"
+#include "eeprom-board.h"
 #include "gps-board.h"
 #include "gps.h"
 
