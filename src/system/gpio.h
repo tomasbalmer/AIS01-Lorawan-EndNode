@@ -109,7 +109,7 @@ typedef void( GpioIrqHandler )( void* context );
 /*!
  * Structure for the GPIO
  */
-typedef struct
+typedef struct Gpio_s
 {
     PinNames  pin;
     uint16_t pinIndex;

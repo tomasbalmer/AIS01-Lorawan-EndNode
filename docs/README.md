@@ -1,6 +1,6 @@
 # Dragino AIS01-LB Custom Firmware
 
-Firmware personalizado para el nodo Dragino AIS01-LB basado en STM32L072CZ y radio SX1276, utilizando el stack LoRaMAC-node (Semtech) para LoRaWAN AU915 Clase A OTAA.
+Firmware personalizado para el nodo Dragino AIS01-LB basado en STM32L072CZ y radio SX1276, utilizando un stack LoRaWAN propio optimizado para AU915 Clase A OTAA.
 
 ## Características
 
@@ -16,20 +16,17 @@ Firmware personalizado para el nodo Dragino AIS01-LB basado en STM32L072CZ y rad
 ## Estructura del Proyecto
 
 ```
-src/apps/dragino-ais01lb/
-├── app/
-│   ├── main.c              # State machine principal
-│   ├── lorawan_app.c/h     # Integración con stack LoRaMAC
-│   ├── atcmd.c/h           # Parser y handlers de comandos AT
-│   ├── power.c/h           # Gestión de bajo consumo (STOP mode)
-│   ├── storage.c/h         # Persistencia (EEPROM emulada)
-│   ├── calibration.c/h     # Calibración remota
-│   └── config.h            # Configuración general
-├── board/
-│   └── board-config.h      # Definiciones de pines
-├── Makefile                # Build con arm-gcc
-├── stm32l072xx_flash_app.ld  # Linker script (FLASH @ 0x08004000)
-└── README.md               # Este archivo
+AIS01-Lorawan-EndNode/
+├── src/
+│   ├── app/          # Lógica de aplicación + AT commands
+│   ├── board/        # Drivers bare-metal para STM32L072 + SX1276
+│   ├── cmsis/        # CMSIS + startup
+│   ├── lorawan/      # Stack LoRaWAN minimalista (core, crypto, región)
+│   ├── radio/        # Driver SX1276 de Semtech
+│   └── system/       # Utilidades (GPIO, timers, UART, etc.)
+├── docs/             # Documentación
+├── Makefile          # Build con arm-gcc
+└── stm32l072xx_flash_app.ld  # Linker script (FLASH @ 0x08004000)
 ```
 
 ## Compilación
@@ -38,7 +35,6 @@ src/apps/dragino-ais01lb/
 
 - **Toolchain**: arm-none-eabi-gcc (versión 10.3 o superior recomendada)
 - **Make**: GNU Make
-- **LoRaMac-node**: Este repositorio ya contiene el stack
 
 ### Pasos
 
@@ -233,7 +229,6 @@ El dispositivo responde con ACK en el siguiente uplink.
 ### No compila
 
 - Verificar que `arm-none-eabi-gcc` esté instalado: `arm-none-eabi-gcc --version`
-- Verificar paths en `Makefile` apuntan correctamente al stack LoRaMac
 
 ### No se une a la red
 
@@ -274,7 +269,6 @@ Si tu hardware Dragino AIS01-LB tiene pines diferentes, modifica:
 
 ## Licencia
 
-Este firmware utiliza el stack LoRaMac-node de Semtech (Revised BSD License).
 
 ## Soporte
 

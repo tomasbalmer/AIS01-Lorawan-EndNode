@@ -28,7 +28,7 @@ extern "C"
  * LoRaWAN REGION CONFIGURATION
  * ========================================================================== */
 #ifndef ACTIVE_REGION
-#define ACTIVE_REGION                       LORAMAC_REGION_AU915
+#define ACTIVE_REGION                       LORAWAN_REGION_AU915
 #endif
 
 /* AU915 Sub-band Configuration (Sub-band 2: channels 8-15) */
@@ -37,18 +37,18 @@ extern "C"
 /* ============================================================================
  * LoRaWAN DEFAULT PARAMETERS
  * ========================================================================== */
-#define LORAWAN_DEFAULT_CLASS               CLASS_A
-#define LORAWAN_DEFAULT_ADR_STATE           LORAMAC_HANDLER_ADR_ON
-#define LORAWAN_DEFAULT_DATARATE            DR_0
-#define LORAWAN_DEFAULT_TX_POWER            TX_POWER_0
-#define LORAWAN_DEFAULT_CONFIRMED_MSG       LORAMAC_HANDLER_UNCONFIRMED_MSG
+#define LORAWAN_DEFAULT_CLASS               LORAWAN_DEVICE_CLASS_A
+#define LORAWAN_DEFAULT_ADR_STATE           1       /* 1 = ADR ON */
+#define LORAWAN_DEFAULT_DATARATE            0       /* DR0 */
+#define LORAWAN_DEFAULT_TX_POWER            0       /* Max EIRP */
+#define LORAWAN_DEFAULT_CONFIRMED_MSG       0       /* 0 = unconfirmed */
 #define LORAWAN_DEFAULT_APP_PORT            2
 #define LORAWAN_DEFAULT_TDC                 60000    /* 60 seconds in ms */
 #define LORAWAN_DUTYCYCLE_ON                false    /* AU915 has no duty cycle */
 
 /* RX2 Configuration (AU915 standard) */
 #define LORAWAN_RX2_FREQUENCY               923300000  /* 923.3 MHz */
-#define LORAWAN_RX2_DATARATE                DR_8
+#define LORAWAN_RX2_DATARATE                8
 
 /* RX Delays (milliseconds) */
 #define LORAWAN_RX1_DELAY                   1000
@@ -62,9 +62,9 @@ extern "C"
 #define APP_FLASH_SIZE                      (176 * 1024) /* 176KB for app */
 
 /* EEPROM Emulation in Flash (last 8KB of flash) */
-#define EEPROM_BASE_ADDRESS                 0x0802E000
-#define EEPROM_SIZE                         (8 * 1024)
-#define EEPROM_PAGE_SIZE                    128
+#define EEPROM_BASE_ADDRESS                 0x08080000
+#define EEPROM_SIZE                         (4 * 1024)
+#define EEPROM_PAGE_SIZE                    64
 
 /* ============================================================================
  * POWER MANAGEMENT CONFIGURATION

@@ -1,75 +1,95 @@
-/*!
- * \file      eeprom-board.c
- *
- * \brief     Target board EEPROM driver implementation
- *
- * \copyright Revised BSD License, see section \ref LICENSE.
- *
- * \code
- *                ______                              _
- *               / _____)             _              | |
- *              ( (____  _____ ____ _| |_ _____  ____| |__
- *               \____ \| ___ |    (_   _) ___ |/ ___)  _ \
- *               _____) ) ____| | | || |_| ____( (___| | | |
- *              (______/|_____)_|_|_| \__)_____)\____)_| |_|
- *              (C)2013-2017 Semtech
- *
- * \endcode
- *
- * \author    Miguel Luis ( Semtech )
- *
- * \author    Gregory Cristian ( Semtech )
- */
+#include <string.h>
 #include "stm32l0xx.h"
 #include "utilities.h"
 #include "eeprom-board.h"
 
-LmnStatus_t EepromMcuWriteBuffer( uint16_t addr, uint8_t *buffer, uint16_t size )
+#define FLASH_PEKEY1 0x89ABCDEFU
+#define FLASH_PEKEY2 0x02030405U
+#define FLASH_PRGKEY1 0x8C9DAEBFU
+#define FLASH_PRGKEY2 0x13141516U
+
+static void FlashUnlock(void)
 {
-    LmnStatus_t status = LMN_STATUS_ERROR;
-
-    assert_param( ( DATA_EEPROM_BASE + addr ) >= DATA_EEPROM_BASE );
-    assert_param( buffer != NULL );
-    assert_param( size < ( DATA_EEPROM_BANK2_END - DATA_EEPROM_BASE ) );
-
-    if( HAL_FLASHEx_DATAEEPROM_Unlock( ) == HAL_OK )
+    if ((FLASH->PECR & FLASH_PECR_PELOCK) != 0U)
     {
-        CRITICAL_SECTION_BEGIN( );
-        for( uint16_t i = 0; i < size; i++ )
-        {
-            if( HAL_FLASHEx_DATAEEPROM_Program( FLASH_TYPEPROGRAMDATA_BYTE,
-                                                ( DATA_EEPROM_BASE + addr + i ),
-                                                  buffer[i] ) != HAL_OK )
-            {
-                // Failed to write EEPROM
-                break;
-            }
-        }
-        CRITICAL_SECTION_END( );
-        status = LMN_STATUS_OK;
+        FLASH->PEKEYR = FLASH_PEKEY1;
+        FLASH->PEKEYR = FLASH_PEKEY2;
     }
-
-    HAL_FLASHEx_DATAEEPROM_Lock( );
-    return status;
+    if ((FLASH->PECR & FLASH_PECR_PRGLOCK) != 0U)
+    {
+        FLASH->PRGKEYR = FLASH_PRGKEY1;
+        FLASH->PRGKEYR = FLASH_PRGKEY2;
+    }
 }
 
-LmnStatus_t EepromMcuReadBuffer( uint16_t addr, uint8_t *buffer, uint16_t size )
+static void FlashLock(void)
 {
-    assert_param( ( DATA_EEPROM_BASE + addr ) >= DATA_EEPROM_BASE );
-    assert_param( buffer != NULL );
-    assert_param( size < ( DATA_EEPROM_BANK2_END - DATA_EEPROM_BASE ) );
+    FLASH->PECR |= FLASH_PECR_PELOCK;
+}
 
-    memcpy1( buffer, ( uint8_t* )( DATA_EEPROM_BASE + addr ), size );
+static void FlashWaitReady(void)
+{
+    while ((FLASH->SR & FLASH_SR_BSY) != 0U)
+    {
+    }
+}
+
+LmnStatus_t EepromMcuWriteBuffer(uint16_t addr, uint8_t *buffer, uint16_t size)
+{
+    if (buffer == NULL || size == 0U)
+    {
+        return LMN_STATUS_ERROR;
+    }
+
+    if ((DATA_EEPROM_BASE + addr) >= DATA_EEPROM_BANK2_END)
+    {
+        return LMN_STATUS_ERROR;
+    }
+
+    FlashUnlock();
+    CRITICAL_SECTION_BEGIN();
+
+    for (uint16_t i = 0; i < size; i++)
+    {
+        FlashWaitReady();
+        *(__IO uint8_t *)(DATA_EEPROM_BASE + addr + i) = buffer[i];
+        FlashWaitReady();
+        if ((FLASH->SR & (FLASH_SR_WRPERR | FLASH_SR_EOP | FLASH_SR_SIZERR)) != 0U)
+        {
+            FLASH->SR = FLASH_SR_WRPERR | FLASH_SR_EOP | FLASH_SR_SIZERR;
+            CRITICAL_SECTION_END();
+            FlashLock();
+            return LMN_STATUS_ERROR;
+        }
+    }
+
+    CRITICAL_SECTION_END();
+    FlashLock();
     return LMN_STATUS_OK;
 }
 
-void EepromMcuSetDeviceAddr( uint8_t addr )
+LmnStatus_t EepromMcuReadBuffer(uint16_t addr, uint8_t *buffer, uint16_t size)
 {
-    assert_param( LMN_STATUS_ERROR );
+    if (buffer == NULL || size == 0U)
+    {
+        return LMN_STATUS_ERROR;
+    }
+
+    if ((DATA_EEPROM_BASE + addr) >= DATA_EEPROM_BANK2_END)
+    {
+        return LMN_STATUS_ERROR;
+    }
+
+    memcpy(buffer, (const void *)(DATA_EEPROM_BASE + addr), size);
+    return LMN_STATUS_OK;
 }
 
-LmnStatus_t EepromMcuGetDeviceAddr( void )
+void EepromMcuSetDeviceAddr(uint8_t addr)
 {
-    assert_param( LMN_STATUS_ERROR );
+    (void)addr;
+}
+
+LmnStatus_t EepromMcuGetDeviceAddr(void)
+{
     return 0;
 }

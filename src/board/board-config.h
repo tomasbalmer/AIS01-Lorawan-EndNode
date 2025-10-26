@@ -38,6 +38,8 @@ extern "C"
 {
 #endif
 
+#include "pinName-board.h"
+
 /*!
  * Defines the time required for the TCXO to wakeup [ms].
  */

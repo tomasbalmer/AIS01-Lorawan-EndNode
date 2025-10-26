@@ -21,10 +21,12 @@
  * \author    Gregory Cristian ( Semtech )
  */
 
+#include "stm32l0xx.h"
+#include "gpio-board.h"
+#include "rtc-board.h"
+
 /*!
  * \brief  This function handles NMI exception.
- * \param  None
- * \retval None
  */
 void NMI_Handler( void )
 {
@@ -32,8 +34,6 @@ void NMI_Handler( void )
 
 /*!
  * \brief  This function handles Hard Fault exception.
- * \param  None
- * \retval None
  */
 #if defined( HARD_FAULT_HANDLER_ENABLED )
 void HardFault_Handler_C( unsigned int *args )
@@ -140,8 +140,6 @@ void HardFault_Handler(void)
 
 /*!
  * \brief  This function handles Memory Manage exception.
- * \param  None
- * \retval None
  */
 void MemManage_Handler( void )
 {
@@ -153,8 +151,6 @@ void MemManage_Handler( void )
 
 /*!
  * \brief  This function handles Bus Fault exception.
- * \param  None
- * \retval None
  */
 void BusFault_Handler( void )
 {
@@ -166,8 +162,6 @@ void BusFault_Handler( void )
 
 /*!
  * \brief  This function handles Usage Fault exception.
- * \param  None
- * \retval None
  */
 void UsageFault_Handler( void )
 {
@@ -179,9 +173,46 @@ void UsageFault_Handler( void )
 
 /*!
  * \brief  This function handles Debug Monitor exception.
- * \param  None
- * \retval None
  */
 void DebugMon_Handler( void )
+{
+}
+
+void SysTick_Handler(void)
+{
+    RtcOnSysTick();
+}
+
+static void HandleExtiLine(uint8_t line)
+{
+    uint32_t mask = (1U << line);
+    if (EXTI->PR & mask)
+    {
+        EXTI->PR = mask;
+        GpioMcuIrqHandler(line);
+    }
+}
+
+void EXTI0_1_IRQHandler(void)
+{
+    HandleExtiLine(0);
+    HandleExtiLine(1);
+}
+
+void EXTI2_3_IRQHandler(void)
+{
+    HandleExtiLine(2);
+    HandleExtiLine(3);
+}
+
+void EXTI4_15_IRQHandler(void)
+{
+    for (uint8_t line = 4; line <= 15; line++)
+    {
+        HandleExtiLine(line);
+    }
+}
+
+void RTC_IRQHandler(void)
 {
 }

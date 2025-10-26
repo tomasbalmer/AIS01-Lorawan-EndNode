@@ -1,327 +1,229 @@
-/*!
- * \file      lorawan_app.c
- *
- * \brief     LoRaWAN application implementation
- *
- * \details   Integrates with LoRaMAC stack, handles join/uplink/downlink,
- *            and processes calibration commands from downlinks.
- */
+#include <string.h>
 #include "lorawan_app.h"
+#include "lorawan.h"
 #include "config.h"
 #include "storage.h"
 #include "calibration.h"
-#include "LoRaMac.h"
-#include "LmHandler.h"
-#include "board.h"
-#include "RegionCommon.h"
-#include <stdio.h>
-#include <string.h>
 
-/* ============================================================================
- * PRIVATE VARIABLES
- * ========================================================================== */
-static LoRaWANStatus_t g_Status = LORAWAN_STATUS_IDLE;
-static bool g_LoRaWANInitialized = false;
-static uint8_t g_AppDataBuffer[LORAWAN_APP_DATA_BUFFER_MAX_SIZE];
-static LmHandlerAppData_t g_AppData = {
-    .Buffer = g_AppDataBuffer,
-    .BufferSize = 0,
-    .Port = LORAWAN_DEFAULT_APP_PORT,
-};
+#define DOWNLINK_MIN_SIZE 1
 
-/* ============================================================================
- * PRIVATE FUNCTION PROTOTYPES - CALLBACKS
- * ========================================================================== */
-static void OnMacProcessNotify(void);
-static void OnNvmDataChange(LmHandlerNvmContextStates_t state, uint16_t size);
-static void OnNetworkParametersChange(CommissioningParams_t *params);
-static void OnMacMcpsRequest(LoRaMacStatus_t status, McpsReq_t *mcpsReq, TimerTime_t nextTxIn);
-static void OnMacMlmeRequest(LoRaMacStatus_t status, MlmeReq_t *mlmeReq, TimerTime_t nextTxIn);
-static void OnJoinRequest(LmHandlerJoinParams_t *params);
-static void OnTxData(LmHandlerTxParams_t *params);
-static void OnRxData(LmHandlerAppData_t *appData, LmHandlerRxParams_t *params);
-static void OnClassChange(DeviceClass_t deviceClass);
-static void OnBeaconStatusChange(LoRaMacHandlerBeaconParams_t *params);
-static void OnSysTimeUpdate(bool isSynchronized, int32_t timeCorrection);
+static LoRaWANStatus_t g_AppStatus = LORAWAN_STATUS_IDLE;
+static LoRaWANContext_t g_LoRaCtx;
+static LoRaWANSession_t g_Session;
+static LoRaWANSettings_t g_Settings;
+static uint8_t g_RadioBuffer[256];
 
-/* ============================================================================
- * LORAWAN HANDLER CALLBACKS
- * ========================================================================== */
-static LmHandlerCallbacks_t g_LmHandlerCallbacks = {
-    .GetBatteryLevel = BoardGetBatteryLevel,
-    .GetTemperature = NULL,
-    .GetRandomSeed = BoardGetRandomSeed,
-    .OnMacProcess = OnMacProcessNotify,
-    .OnNvmDataChange = OnNvmDataChange,
-    .OnNetworkParametersChange = OnNetworkParametersChange,
-    .OnMacMcpsRequest = OnMacMcpsRequest,
-    .OnMacMlmeRequest = OnMacMlmeRequest,
-    .OnJoinRequest = OnJoinRequest,
-    .OnTxData = OnTxData,
+static void OnJoinSuccess(uint32_t devAddr);
+static void OnJoinFailure(void);
+static void OnTxComplete(LoRaWANStatus_t status);
+static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t rssi, int8_t snr);
+
+static const LoRaWANCallbacks_t g_Callbacks = {
+    .OnJoinSuccess = OnJoinSuccess,
+    .OnJoinFailure = OnJoinFailure,
+    .OnTxComplete = OnTxComplete,
     .OnRxData = OnRxData,
-    .OnClassChange = OnClassChange,
-    .OnBeaconStatusChange = OnBeaconStatusChange,
-    .OnSysTimeUpdate = OnSysTimeUpdate,
 };
 
-/* ============================================================================
- * PUBLIC FUNCTIONS
- * ========================================================================== */
+static void LoRaWANApp_LoadSettings(const StorageData_t *storage)
+{
+    memcpy(g_Session.DevEui, storage->DevEui, sizeof(g_Session.DevEui));
+    memcpy(g_Session.AppEui, storage->AppEui, sizeof(g_Session.AppEui));
+    memcpy(g_Session.AppKey, storage->AppKey, sizeof(g_Session.AppKey));
+    memcpy(g_Session.NwkSKey, storage->NwkSKey, sizeof(g_Session.NwkSKey));
+    memcpy(g_Session.AppSKey, storage->AppSKey, sizeof(g_Session.AppSKey));
+    g_Session.DevAddr = storage->DevAddr;
+    g_Session.FCntUp = storage->FrameCounterUp;
+    g_Session.FCntDown = storage->FrameCounterDown;
+    g_Session.Joined = (storage->DevAddr != 0);
+    g_Session.DevNonceCounter = 0;
+
+    g_Settings.Region = LORAWAN_REGION_AU915;
+    g_Settings.DeviceClass = LORAWAN_DEVICE_CLASS_A;
+    g_Settings.AdrState = storage->AdrEnabled ? LORAWAN_ADR_ON : LORAWAN_ADR_OFF;
+    g_Settings.DataRate = storage->DataRate;
+    g_Settings.TxPower = storage->TxPower;
+    g_Settings.Rx2DataRate = storage->Rx2DataRate;
+    g_Settings.Rx2Frequency = storage->Rx2Frequency;
+    g_Settings.SubBand = storage->FreqBand;
+    g_Settings.MsgType = storage->ConfirmedMsg ? LORAWAN_MSG_CONFIRMED : LORAWAN_MSG_UNCONFIRMED;
+    g_Settings.AppPort = storage->AppPort;
+    g_Settings.TxDutyCycleMs = storage->TxDutyCycle;
+}
 
 bool LoRaWANApp_Init(void)
 {
-    if (g_LoRaWANInitialized)
+    StorageData_t storage;
+
+    if (!Storage_Init())
     {
-        return true;
+        return false;
     }
 
-    /* Load configuration from storage */
-    StorageData_t storage;
     if (!Storage_Load(&storage))
     {
-        DEBUG_PRINT("Failed to load storage configuration\r\n");
+        memset(&storage, 0, sizeof(storage));
+        storage.TxDutyCycle = LORAWAN_DEFAULT_TDC;
+        storage.AdrEnabled = (LORAWAN_DEFAULT_ADR_STATE != 0);
+        storage.DataRate = LORAWAN_DEFAULT_DATARATE;
+        storage.TxPower = LORAWAN_DEFAULT_TX_POWER;
+        storage.Rx2DataRate = LORAWAN_RX2_DATARATE;
+        storage.Rx2Frequency = LORAWAN_RX2_FREQUENCY;
+        storage.AppPort = LORAWAN_DEFAULT_APP_PORT;
+    }
+
+    LoRaWANApp_LoadSettings(&storage);
+
+    g_LoRaCtx.Session = &g_Session;
+    g_LoRaCtx.Settings = g_Settings;
+    g_LoRaCtx.Callbacks = g_Callbacks;
+    g_LoRaCtx.RadioBuffer = g_RadioBuffer;
+    g_LoRaCtx.RadioBufferSize = sizeof(g_RadioBuffer);
+
+    if (LoRaWAN_Init(&g_LoRaCtx) != LORAWAN_STATUS_SUCCESS)
+    {
         return false;
     }
 
-    /* Configure LmHandler parameters */
-    LmHandlerParams_t handlerParams = {
-        .Region = ACTIVE_REGION,
-        .AdrEnable = storage.AdrEnabled ? LORAMAC_HANDLER_ADR_ON : LORAMAC_HANDLER_ADR_OFF,
-        .IsTxConfirmed = storage.ConfirmedMsg ? LORAMAC_HANDLER_CONFIRMED_MSG : LORAMAC_HANDLER_UNCONFIRMED_MSG,
-        .TxDatarate = storage.DataRate,
-        .PublicNetworkEnable = true,
-        .DutyCycleEnabled = LORAWAN_DUTYCYCLE_ON,
-        .DataBufferMaxSize = LORAWAN_APP_DATA_BUFFER_MAX_SIZE,
-        .DataBuffer = g_AppDataBuffer,
-        .PingSlotPeriodicity = REGION_COMMON_DEFAULT_PING_SLOT_PERIODICITY,
-    };
-
-    /* Initialize LoRaMac handler */
-    if (LmHandlerInit(&g_LmHandlerCallbacks, &handlerParams) != LORAMAC_HANDLER_SUCCESS)
-    {
-        DEBUG_PRINT("LoRaMac handler initialization failed\r\n");
-        return false;
-    }
-
-    /* Set system maximum tolerated RX error */
-    LmHandlerSetSystemMaxRxError(20);
-
-    /* Configure AU915 sub-band */
-    if (ACTIVE_REGION == LORAMAC_REGION_AU915)
-    {
-        /* AU915 Sub-band 2 (channels 8-15) */
-        uint16_t channelMask[] = {0x0000, 0x00FF, 0x0000, 0x0000, 0x0000};
-        LoRaMacChannelsMask_t mask;
-        memcpy(mask.ChannelsMask, channelMask, sizeof(channelMask));
-        /* Note: Use proper LoRaMAC API to set channel mask */
-    }
-
-    g_LoRaWANInitialized = true;
-    DEBUG_PRINT("LoRaWAN initialized (AU915, Sub-band %d)\r\n", LORAWAN_AU915_SUB_BAND);
-
+    g_AppStatus = g_Session.Joined ? LORAWAN_STATUS_JOINED : LORAWAN_STATUS_IDLE;
     return true;
 }
 
 bool LoRaWANApp_Join(void)
 {
-    if (!g_LoRaWANInitialized)
-    {
-        return false;
-    }
-
-    g_Status = LORAWAN_STATUS_JOINING;
-    DEBUG_PRINT("Initiating OTAA join...\r\n");
-
-    LmHandlerJoin();
-
-    return true;
+    g_AppStatus = LORAWAN_STATUS_JOINING;
+    return (LoRaWAN_RequestJoin(&g_LoRaCtx) == LORAWAN_STATUS_SUCCESS);
 }
 
 bool LoRaWANApp_SendUplink(uint8_t *buffer, uint8_t size, uint8_t port, bool confirmed)
 {
-    if (!g_LoRaWANInitialized || !LoRaWANApp_IsJoined())
+    LoRaWANMsgType_t type = confirmed ? LORAWAN_MSG_CONFIRMED : LORAWAN_MSG_UNCONFIRMED;
+    LoRaWANStatus_t status = LoRaWAN_Send(&g_LoRaCtx, buffer, size, port, type);
+    if (status == LORAWAN_STATUS_SUCCESS)
     {
-        return false;
-    }
-
-    if (LmHandlerIsBusy())
-    {
-        DEBUG_PRINT("LoRaMAC is busy, cannot send\r\n");
-        return false;
-    }
-
-    /* Prepare uplink data */
-    g_AppData.Port = port;
-    g_AppData.BufferSize = size;
-    memcpy(g_AppData.Buffer, buffer, size);
-
-    g_Status = LORAWAN_STATUS_SENDING;
-
-    LmHandlerMsgTypes_t msgType = confirmed ? LORAMAC_HANDLER_CONFIRMED_MSG : LORAMAC_HANDLER_UNCONFIRMED_MSG;
-
-    if (LmHandlerSend(&g_AppData, msgType) == LORAMAC_HANDLER_SUCCESS)
-    {
-        DEBUG_PRINT("Uplink queued (port %d, size %d)\r\n", port, size);
+        g_AppStatus = LORAWAN_STATUS_SENDING;
         return true;
     }
-
-    g_Status = LORAWAN_STATUS_SEND_FAILED;
     return false;
 }
 
 void LoRaWANApp_Process(void)
 {
-    if (!g_LoRaWANInitialized)
-    {
-        return;
-    }
-
-    /* Process LoRaMac events */
-    LmHandlerProcess();
+    LoRaWAN_Process(&g_LoRaCtx);
 }
 
 LoRaWANStatus_t LoRaWANApp_GetStatus(void)
 {
-    return g_Status;
+    return g_AppStatus;
 }
 
 bool LoRaWANApp_IsJoined(void)
 {
-    return (g_Status == LORAWAN_STATUS_JOINED ||
-            g_Status == LORAWAN_STATUS_SENDING ||
-            g_Status == LORAWAN_STATUS_SEND_SUCCESS ||
-            g_Status == LORAWAN_STATUS_SEND_FAILED);
+    return g_Session.Joined;
 }
 
 uint32_t LoRaWANApp_GetDevAddr(void)
 {
-    /* Return DevAddr from LoRaMac context */
-    /* TODO: Implement using LmHandler API */
-    return 0;
+    return g_Session.DevAddr;
 }
 
-/* ============================================================================
- * PRIVATE CALLBACK IMPLEMENTATIONS
- * ========================================================================== */
-
-static void OnMacProcessNotify(void)
+static void OnJoinSuccess(uint32_t devAddr)
 {
-    /* MAC process notification - wake up from low power mode */
+    g_Session.Joined = true;
+    g_Session.DevAddr = devAddr;
+    g_Session.FCntUp = 0;
+    g_Session.FCntDown = 0;
+    Storage_UpdateJoinKeys(devAddr, g_Session.NwkSKey, g_Session.AppSKey);
+    g_AppStatus = LORAWAN_STATUS_JOINED;
 }
 
-static void OnNvmDataChange(LmHandlerNvmContextStates_t state, uint16_t size)
+static void OnJoinFailure(void)
 {
-    DEBUG_PRINT("NVM data change: state=%d, size=%d\r\n", state, size);
+    g_AppStatus = LORAWAN_STATUS_JOIN_FAILED;
 }
 
-static void OnNetworkParametersChange(CommissioningParams_t *params)
+static void OnTxComplete(LoRaWANStatus_t status)
 {
-    DEBUG_PRINT("Network parameters updated\r\n");
+    g_AppStatus = (status == LORAWAN_STATUS_SUCCESS) ? LORAWAN_STATUS_SEND_SUCCESS : LORAWAN_STATUS_SEND_FAILED;
 }
 
-static void OnMacMcpsRequest(LoRaMacStatus_t status, McpsReq_t *mcpsReq, TimerTime_t nextTxIn)
+static void HandleDownlinkOpcode(const uint8_t *payload, uint8_t size)
 {
-    DEBUG_PRINT("MCPS Request: status=%d, nextTx=%lu\r\n", status, nextTxIn);
-}
-
-static void OnMacMlmeRequest(LoRaMacStatus_t status, MlmeReq_t *mlmeReq, TimerTime_t nextTxIn)
-{
-    DEBUG_PRINT("MLME Request: status=%d, nextTx=%lu\r\n", status, nextTxIn);
-}
-
-static void OnJoinRequest(LmHandlerJoinParams_t *params)
-{
-    if (params->Status == LORAMAC_HANDLER_ERROR)
+    if (size < DOWNLINK_MIN_SIZE)
     {
-        DEBUG_PRINT("Join failed, retrying...\r\n");
-        g_Status = LORAWAN_STATUS_JOIN_FAILED;
-
-        /* Retry join */
-        LmHandlerJoin();
+        return;
     }
-    else if (params->Status == LORAMAC_HANDLER_SUCCESS)
+
+    switch (payload[0])
     {
-        DEBUG_PRINT("Join successful!\r\n");
-        g_Status = LORAWAN_STATUS_JOINED;
-
-        /* Set device class (Class A by default) */
-        LmHandlerRequestClass(LORAWAN_DEFAULT_CLASS);
-    }
-}
-
-static void OnTxData(LmHandlerTxParams_t *params)
-{
-    DEBUG_PRINT("TX Done: datarate=%d, txPower=%d\r\n", params->Datarate, params->TxPower);
-
-    if (params->MsgType == LORAMAC_HANDLER_CONFIRMED_MSG)
-    {
-        if (params->AckReceived)
+        case 0x01: /* Set TDC */
         {
-            DEBUG_PRINT("ACK received\r\n");
-            g_Status = LORAWAN_STATUS_SEND_SUCCESS;
+            if (size >= 5)
+            {
+                uint32_t interval = 0;
+                memcpy(&interval, &payload[1], sizeof(uint32_t));
+                Storage_Write(STORAGE_KEY_TDC, (uint8_t *)&interval, sizeof(uint32_t));
+                g_Settings.TxDutyCycleMs = interval;
+                g_LoRaCtx.Settings.TxDutyCycleMs = interval;
+            }
+            break;
         }
-        else
+
+        case 0x21: /* ADR */
         {
-            DEBUG_PRINT("ACK not received\r\n");
-            g_Status = LORAWAN_STATUS_SEND_FAILED;
+            if (size >= 2)
+            {
+                uint8_t adr = payload[1] ? 1 : 0;
+                Storage_Write(STORAGE_KEY_ADR, &adr, 1);
+                g_Settings.AdrState = adr ? LORAWAN_ADR_ON : LORAWAN_ADR_OFF;
+                g_LoRaCtx.Settings.AdrState = g_Settings.AdrState;
+            }
+            break;
         }
-    }
-    else
-    {
-        g_Status = LORAWAN_STATUS_SEND_SUCCESS;
-    }
 
-    /* After TX, return to joined state */
-    g_Status = LORAWAN_STATUS_JOINED;
-}
-
-static void OnRxData(LmHandlerAppData_t *appData, LmHandlerRxParams_t *params)
-{
-    DEBUG_PRINT("RX: port=%d, datarate=%d, rssi=%d, snr=%d, size=%d\r\n",
-                appData->Port, params->Datarate, params->Rssi, params->Snr, appData->BufferSize);
-
-    /* Check if this is a calibration command */
-    if (appData->Port == CALIBRATION_DOWNLINK_PORT && appData->BufferSize > 0)
-    {
-        if (appData->Buffer[0] == CALIBRATION_OPCODE)
+        case 0x22: /* Data rate */
         {
-            DEBUG_PRINT("Processing calibration command\r\n");
+            if (size >= 2)
+            {
+                uint8_t dr = payload[1];
+                Storage_Write(STORAGE_KEY_DR, &dr, 1);
+                g_Settings.DataRate = dr;
+                g_LoRaCtx.Settings.DataRate = dr;
+            }
+            break;
+        }
 
+        case 0x23: /* TX power */
+        {
+            if (size >= 2)
+            {
+                uint8_t txp = payload[1];
+                Storage_Write(STORAGE_KEY_TXP, &txp, 1);
+                g_Settings.TxPower = txp;
+                g_LoRaCtx.Settings.TxPower = txp;
+            }
+            break;
+        }
+
+        case 0xA0: /* Remote calibration */
+        {
             uint8_t response[32];
             uint8_t responseSize = 0;
-
-            if (Calibration_ProcessDownlink(&appData->Buffer[1], appData->BufferSize - 1,
-                                           response, &responseSize))
+            if (Calibration_ProcessDownlink(payload, size, response, &responseSize))
             {
-                /* Send calibration response as uplink */
-                if (responseSize > 0)
-                {
-                    LoRaWANApp_SendUplink(response, responseSize, CALIBRATION_DOWNLINK_PORT, false);
-                }
             }
+            break;
         }
-    }
-    else
-    {
-        /* Handle other downlink ports */
-        DEBUG_PRINT("Downlink received on port %d\r\n", appData->Port);
+
+        default:
+            break;
     }
 }
 
-static void OnClassChange(DeviceClass_t deviceClass)
+static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t rssi, int8_t snr)
 {
-    DEBUG_PRINT("Device class changed to %d\r\n", deviceClass);
-}
-
-static void OnBeaconStatusChange(LoRaMacHandlerBeaconParams_t *params)
-{
-    /* Class B beacon status - not used in Class A */
-}
-
-static void OnSysTimeUpdate(bool isSynchronized, int32_t timeCorrection)
-{
-    if (isSynchronized)
-    {
-        DEBUG_PRINT("System time synchronized (correction: %ld ms)\r\n", timeCorrection);
-    }
+    (void)port;
+    (void)rssi;
+    (void)snr;
+    HandleDownlinkOpcode(buffer, size);
 }

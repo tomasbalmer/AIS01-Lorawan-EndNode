@@ -1,343 +1,245 @@
-/*!
- * \file      uart-board.c
- *
- * \brief     Target board UART driver implementation
- *
- * \copyright Revised BSD License, see section \ref LICENSE.
- *
- * \code
- *                ______                              _
- *               / _____)             _              | |
- *              ( (____  _____ ____ _| |_ _____  ____| |__
- *               \____ \| ___ |    (_   _) ___ |/ ___)  _ \
- *               _____) ) ____| | | || |_| ____( (___| | | |
- *              (______/|_____)_|_|_| \__)_____)\____)_| |_|
- *              (C)2013-2017 Semtech
- *
- * \endcode
- *
- * \author    Miguel Luis ( Semtech )
- *
- * \author    Gregory Cristian ( Semtech )
- */
+#include <stdbool.h>
 #include "stm32l0xx.h"
 #include "utilities.h"
 #include "board.h"
-#include "sysIrqHandlers.h"
+#include "gpio.h"
 #include "uart-board.h"
 
-/*!
- * Number of times the UartPutBuffer will try to send the buffer before
- * returning ERROR
- */
-#define TX_BUFFER_RETRY_COUNT                       10
+#define UART_TX_FIFO_SIZE 1024
+#define UART_RX_FIFO_SIZE 1024
 
-static UART_HandleTypeDef UartHandle;
-uint8_t RxData = 0;
-uint8_t TxData = 0;
+static Uart_t *s_Uart2Obj = NULL;
 
-extern Uart_t Uart2;
-
-void UartMcuInit( Uart_t *obj, UartId_t uartId, PinNames tx, PinNames rx )
+static void EnableUsart2Clock(void)
 {
+    RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+    __DSB();
+}
+
+static void DisableUsart2Clock(void)
+{
+    RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
+    __DSB();
+}
+
+static void ConfigureGpioPins(Uart_t *obj, PinNames tx, PinNames rx)
+{
+    GpioInit(&obj->Tx, tx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, GPIO_AF4_USART2);
+    GpioInit(&obj->Rx, rx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, GPIO_AF4_USART2);
+}
+
+static void SetBaudrate(uint32_t baudrate)
+{
+    uint32_t clock = SystemCoreClock;
+    uint32_t brr = (clock + (baudrate / 2U)) / baudrate;
+    USART2->BRR = brr;
+}
+
+void UartMcuInit(Uart_t *obj, UartId_t uartId, PinNames tx, PinNames rx)
+{
+    if (obj == NULL)
+    {
+        return;
+    }
+
     obj->UartId = uartId;
+    obj->IsInitialized = true;
 
-    if( uartId == UART_USB_CDC )
+    if (uartId != UART_2)
     {
-#if defined( USE_USB_CDC )
-        UartUsbInit( obj, uartId, NC, NC );
-#endif
+        return;
     }
-    else
-    {
-        __HAL_RCC_USART2_FORCE_RESET( );
-        __HAL_RCC_USART2_RELEASE_RESET( );
-        __HAL_RCC_USART2_CLK_ENABLE( );
 
-        GpioInit( &obj->Tx, tx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, GPIO_AF4_USART2 );
-        GpioInit( &obj->Rx, rx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, GPIO_AF4_USART2 );
-    }
+    EnableUsart2Clock();
+    ConfigureGpioPins(obj, tx, rx);
+    s_Uart2Obj = obj;
 }
 
-void UartMcuConfig( Uart_t *obj, UartMode_t mode, uint32_t baudrate, WordLength_t wordLength, StopBits_t stopBits, Parity_t parity, FlowCtrl_t flowCtrl )
+void UartMcuConfig(Uart_t *obj, UartMode_t mode, uint32_t baudrate, WordLength_t wordLength, StopBits_t stopBits, Parity_t parity, FlowCtrl_t flowCtrl)
 {
-    if( obj->UartId == UART_USB_CDC )
+    (void)flowCtrl;
+
+    if ((obj == NULL) || (obj->UartId != UART_2))
     {
-#if defined( USE_USB_CDC )
-        UartUsbConfig( obj, mode, baudrate, wordLength, stopBits, parity, flowCtrl );
-#endif
+        return;
     }
-    else
+
+    // Only RX_TX, 8N1 supported
+    if (mode != RX_TX || wordLength != UART_8_BIT || stopBits != UART_1_STOP_BIT || parity != NO_PARITY)
     {
-        UartHandle.Instance = USART2;
-        UartHandle.Init.BaudRate = baudrate;
-
-        if( mode == TX_ONLY )
-        {
-            if( obj->FifoTx.Data == NULL )
-            {
-                assert_param( LMN_STATUS_ERROR );
-            }
-            UartHandle.Init.Mode = UART_MODE_TX;
-        }
-        else if( mode == RX_ONLY )
-        {
-            if( obj->FifoRx.Data == NULL )
-            {
-                assert_param( LMN_STATUS_ERROR );
-            }
-            UartHandle.Init.Mode = UART_MODE_RX;
-        }
-        else if( mode == RX_TX )
-        {
-            if( ( obj->FifoTx.Data == NULL ) || ( obj->FifoRx.Data == NULL ) )
-            {
-                assert_param( LMN_STATUS_ERROR );
-            }
-            UartHandle.Init.Mode = UART_MODE_TX_RX;
-        }
-        else
-        {
-            assert_param( LMN_STATUS_ERROR );
-        }
-
-        if( wordLength == UART_8_BIT )
-        {
-            UartHandle.Init.WordLength = UART_WORDLENGTH_8B;
-        }
-        else if( wordLength == UART_9_BIT )
-        {
-            UartHandle.Init.WordLength = UART_WORDLENGTH_9B;
-        }
-
-        switch( stopBits )
-        {
-        case UART_2_STOP_BIT:
-            UartHandle.Init.StopBits = UART_STOPBITS_2;
-            break;
-        case UART_1_5_STOP_BIT:
-            UartHandle.Init.StopBits = UART_STOPBITS_1_5;
-            break;
-        case UART_1_STOP_BIT:
-        default:
-            UartHandle.Init.StopBits = UART_STOPBITS_1;
-            break;
-        }
-
-        if( parity == NO_PARITY )
-        {
-            UartHandle.Init.Parity = UART_PARITY_NONE;
-        }
-        else if( parity == EVEN_PARITY )
-        {
-            UartHandle.Init.Parity = UART_PARITY_EVEN;
-        }
-        else
-        {
-            UartHandle.Init.Parity = UART_PARITY_ODD;
-        }
-
-        if( flowCtrl == NO_FLOW_CTRL )
-        {
-            UartHandle.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-        }
-        else if( flowCtrl == RTS_FLOW_CTRL )
-        {
-            UartHandle.Init.HwFlowCtl = UART_HWCONTROL_RTS;
-        }
-        else if( flowCtrl == CTS_FLOW_CTRL )
-        {
-            UartHandle.Init.HwFlowCtl = UART_HWCONTROL_CTS;
-        }
-        else if( flowCtrl == RTS_CTS_FLOW_CTRL )
-        {
-            UartHandle.Init.HwFlowCtl = UART_HWCONTROL_RTS_CTS;
-        }
-
-        UartHandle.Init.OverSampling = UART_OVERSAMPLING_16;
-
-        if( HAL_UART_Init( &UartHandle ) != HAL_OK )
-        {
-            assert_param( LMN_STATUS_ERROR );
-        }
-
-        HAL_NVIC_SetPriority( USART2_IRQn, 1, 0 );
-        HAL_NVIC_EnableIRQ( USART2_IRQn );
-
-        /* Enable the UART Data Register not empty Interrupt */
-        HAL_UART_Receive_IT( &UartHandle, &RxData, 1 );
+        return;
     }
+
+    EnableUsart2Clock();
+
+    USART2->CR1 = 0;
+    USART2->CR2 = 0;
+    USART2->CR3 = 0;
+
+    SetBaudrate(baudrate);
+
+    USART2->CR1 |= USART_CR1_TE | USART_CR1_RE;
+    USART2->CR1 |= USART_CR1_RXNEIE;
+
+    NVIC_SetPriority(USART2_IRQn, 2);
+    NVIC_EnableIRQ(USART2_IRQn);
+
+    USART2->CR1 |= USART_CR1_UE;
 }
 
-void UartMcuDeInit( Uart_t *obj )
+void UartMcuDeInit(Uart_t *obj)
 {
-    if( obj->UartId == UART_USB_CDC )
+    if ((obj == NULL) || (obj->UartId != UART_2))
     {
-#if defined( USE_USB_CDC )
-        UartUsbDeInit( obj );
-#endif
+        return;
     }
-    else
-    {
-        __HAL_RCC_USART2_FORCE_RESET( );
-        __HAL_RCC_USART2_RELEASE_RESET( );
-        __HAL_RCC_USART2_CLK_DISABLE( );
 
-        GpioInit( &obj->Tx, obj->Tx.pin, PIN_ANALOGIC, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
-        GpioInit( &obj->Rx, obj->Rx.pin, PIN_ANALOGIC, PIN_PUSH_PULL, PIN_NO_PULL, 0 );
-    }
+    USART2->CR1 &= ~(USART_CR1_UE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE);
+    NVIC_DisableIRQ(USART2_IRQn);
+    DisableUsart2Clock();
+    s_Uart2Obj = NULL;
 }
 
-uint8_t UartMcuPutChar( Uart_t *obj, uint8_t data )
+static void UartEnableTxInterrupt(void)
 {
-    if( obj->UartId == UART_USB_CDC )
-    {
-#if defined( USE_USB_CDC )
-        return UartUsbPutChar( obj, data );
-#else
-        return 255; // Not supported
-#endif
-    }
-    else
-    {
-        CRITICAL_SECTION_BEGIN( );
-        TxData = data;
-
-        if( IsFifoFull( &obj->FifoTx ) == false )
-        {
-            FifoPush( &obj->FifoTx, TxData );
-
-            // Trig UART Tx interrupt to start sending the FIFO contents.
-            __HAL_UART_ENABLE_IT( &UartHandle, UART_IT_TC );
-
-            CRITICAL_SECTION_END( );
-            return 0; // OK
-        }
-        CRITICAL_SECTION_END( );
-        return 1; // Busy
-    }
+    USART2->CR1 |= USART_CR1_TXEIE;
 }
 
-uint8_t UartMcuGetChar( Uart_t *obj, uint8_t *data )
+static void UartDisableTxInterrupt(void)
 {
-    if( obj->UartId == UART_USB_CDC )
-    {
-#if defined( USE_USB_CDC )
-        return UartUsbGetChar( obj, data );
-#else
-        return 255; // Not supported
-#endif
-    }
-    else
-    {
-        CRITICAL_SECTION_BEGIN( );
+    USART2->CR1 &= ~USART_CR1_TXEIE;
+}
 
-        if( IsFifoEmpty( &obj->FifoRx ) == false )
-        {
-            *data = FifoPop( &obj->FifoRx );
-            CRITICAL_SECTION_END( );
-            return 0;
-        }
-        CRITICAL_SECTION_END( );
+uint8_t UartMcuPutChar(Uart_t *obj, uint8_t data)
+{
+    if ((obj == NULL) || (obj->UartId != UART_2))
+    {
         return 1;
     }
-}
 
-uint8_t UartMcuPutBuffer( Uart_t *obj, uint8_t *buffer, uint16_t size )
-{
-    if( obj->UartId == UART_USB_CDC )
+    uint32_t mask;
+    BoardCriticalSectionBegin(&mask);
+
+    if (IsFifoFull(&obj->FifoTx))
     {
-#if defined( USE_USB_CDC )
-        return UartUsbPutBuffer( obj, buffer, size );
-#else
-        return 255; // Not supported
-#endif
+        BoardCriticalSectionEnd(&mask);
+        return 1;
+    }
+
+    bool txIdle = (USART2->ISR & USART_ISR_TXE) != 0U && (USART2->CR1 & USART_CR1_TXEIE) == 0U;
+
+    if (txIdle && IsFifoEmpty(&obj->FifoTx))
+    {
+        USART2->TDR = data;
     }
     else
     {
-        uint8_t retryCount;
-        uint16_t i;
-
-        for( i = 0; i < size; i++ )
-        {
-            retryCount = 0;
-            while( UartPutChar( obj, buffer[i] ) != 0 )
-            {
-                retryCount++;
-
-                // Exit if something goes terribly wrong
-                if( retryCount > TX_BUFFER_RETRY_COUNT )
-                {
-                    return 1; // Error
-                }
-            }
-        }
-        return 0; // OK
+        FifoPush(&obj->FifoTx, data);
+        UartEnableTxInterrupt();
     }
+
+    BoardCriticalSectionEnd(&mask);
+    return 0;
 }
 
-uint8_t UartMcuGetBuffer( Uart_t *obj, uint8_t *buffer, uint16_t size, uint16_t *nbReadBytes )
+uint8_t UartMcuGetChar(Uart_t *obj, uint8_t *data)
 {
-    uint16_t localSize = 0;
-
-    while( localSize < size )
+    if ((obj == NULL) || data == NULL || (obj->UartId != UART_2))
     {
-        if( UartGetChar( obj, buffer + localSize ) == 0 )
+        return 1;
+    }
+
+    uint32_t mask;
+    BoardCriticalSectionBegin(&mask);
+
+    if (IsFifoEmpty(&obj->FifoRx))
+    {
+        BoardCriticalSectionEnd(&mask);
+        return 1;
+    }
+
+    *data = FifoPop(&obj->FifoRx);
+    BoardCriticalSectionEnd(&mask);
+    return 0;
+}
+
+uint8_t UartMcuPutBuffer(Uart_t *obj, uint8_t *buffer, uint16_t size)
+{
+    if ((obj == NULL) || buffer == NULL)
+    {
+        return 1;
+    }
+
+    for (uint16_t i = 0; i < size; i++)
+    {
+        if (UartMcuPutChar(obj, buffer[i]) != 0U)
         {
-            localSize++;
+            return 1;
         }
-        else
+    }
+    return 0;
+}
+
+uint8_t UartMcuGetBuffer(Uart_t *obj, uint8_t *buffer, uint16_t size, uint16_t *nbReadBytes)
+{
+    if ((obj == NULL) || buffer == NULL || nbReadBytes == NULL)
+    {
+        return 1;
+    }
+
+    *nbReadBytes = 0;
+    for (uint16_t i = 0; i < size; i++)
+    {
+        if (UartMcuGetChar(obj, &buffer[i]) != 0U)
         {
             break;
         }
+        (*nbReadBytes)++;
     }
-
-    *nbReadBytes = localSize;
-
-    if( localSize == 0 )
-    {
-        return 1; // Empty
-    }
-    return 0; // OK
+    return 0;
 }
 
-void HAL_UART_TxCpltCallback( UART_HandleTypeDef *handle )
+void USART2_IRQHandler(void)
 {
-    if( IsFifoEmpty( &Uart2.FifoTx ) == false )
+    if (s_Uart2Obj == NULL)
     {
-        TxData = FifoPop( &Uart2.FifoTx );
-        //  Write one byte to the transmit data register
-        HAL_UART_Transmit_IT( &UartHandle, &TxData, 1 );
+        return;
     }
 
-    if( Uart2.IrqNotify != NULL )
-    {
-        Uart2.IrqNotify( UART_NOTIFY_TX );
-    }
-}
+    uint32_t isr = USART2->ISR;
 
-void HAL_UART_RxCpltCallback( UART_HandleTypeDef *handle )
-{
-    if( IsFifoFull( &Uart2.FifoRx ) == false )
+    if (isr & USART_ISR_RXNE)
     {
-        // Read one byte from the receive data register
-        FifoPush( &Uart2.FifoRx, RxData );
-    }
-
-    if( Uart2.IrqNotify != NULL )
-    {
-        Uart2.IrqNotify( UART_NOTIFY_RX );
+        uint8_t byte = (uint8_t)(USART2->RDR & 0xFFU);
+        if (!IsFifoFull(&s_Uart2Obj->FifoRx))
+        {
+            FifoPush(&s_Uart2Obj->FifoRx, byte);
+            if (s_Uart2Obj->IrqNotify != NULL)
+            {
+                s_Uart2Obj->IrqNotify(UART_NOTIFY_RX);
+            }
+        }
     }
 
-    HAL_UART_Receive_IT( &UartHandle, &RxData, 1 );
-}
+    if ((isr & USART_ISR_TXE) && (USART2->CR1 & USART_CR1_TXEIE))
+    {
+        if (!IsFifoEmpty(&s_Uart2Obj->FifoTx))
+        {
+            uint8_t byte = FifoPop(&s_Uart2Obj->FifoTx);
+            USART2->TDR = byte;
+        }
+        else
+        {
+            UartDisableTxInterrupt();
+            if (s_Uart2Obj->IrqNotify != NULL)
+            {
+                s_Uart2Obj->IrqNotify(UART_NOTIFY_TX);
+            }
+        }
+    }
 
-void HAL_UART_ErrorCallback( UART_HandleTypeDef *handle )
-{
-    HAL_UART_Receive_IT( &UartHandle, &RxData, 1 );
-}
-
-void USART2_IRQHandler( void )
-{
-    HAL_UART_IRQHandler( &UartHandle );
+    if (isr & (USART_ISR_ORE | USART_ISR_FE | USART_ISR_NE))
+    {
+        USART2->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NCF;
+    }
 }
