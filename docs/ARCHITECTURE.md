@@ -20,10 +20,10 @@ El firmware está diseñado como una máquina de estados modular para un nodo Lo
 └────────────────────────┼─────────────────────────────────────┘
                          │
 ┌────────────────────────▼─────────────────────────────────────┐
-│              STACK LoRaMAC (Semtech)                         │
+│          STACK LoRaWAN MINIMAL (src/lorawan)                 │
 │  ┌──────────┐  ┌───────────┐  ┌─────────┐                  │
-│  │ LoRaMac  │──│ Region    │──│ Crypto  │                  │
-│  │ Handler  │  │ AU915     │  │         │                  │
+│  │ Core     │──│ Región    │──│ Crypto  │                  │
+│  │ lorawan.c│  │ AU915     │  │ AES/CMAC│                  │
 │  └─────┬────┘  └───────────┘  └─────────┘                  │
 └────────┼──────────────────────────────────────────────────────┘
          │
@@ -61,20 +61,18 @@ BOOT → JOIN → IDLE ⇄ UPLINK → SLEEP → IDLE
 
 ### 2. lorawan_app.c - LoRaWAN Application Layer
 
-**Responsabilidad**: Abstracción del stack LoRaMAC
+**Responsabilidad**: Puente entre la aplicación y el stack LoRaWAN minimalista
 
 **Funciones clave**:
-- `LoRaWANApp_Init()`: Configura región AU915, callbacks
-- `LoRaWANApp_Join()`: Inicia OTAA join
-- `LoRaWANApp_SendUplink()`: Envía datos al servidor
-- `LoRaWANApp_Process()`: Procesa eventos del stack
+- `LoRaWANApp_Init()`: Carga credenciales desde flash y prepara el contexto `lorawan`
+- `LoRaWANApp_Join()`: Dispara el OTAA join
+- `LoRaWANApp_SendUplink()`: Serializa y envía payloads
+- `LoRaWANApp_Process()`: Ejecuta tareas diferidas del stack
 
 **Callbacks implementados**:
-- `OnJoinRequest()`: Maneja resultado del join
-- `OnTxData()`: Confirmación de TX
-- `OnRxData()`: Recepción de downlinks
-- `OnMacMcpsRequest()`: Eventos MCPS
-- `OnMacMlmeRequest()`: Eventos MLME
+- `OnJoinSuccess() / OnJoinFailure()`: Resultado del join
+- `OnTxComplete()`: Estado del envío
+- `OnRxData()`: Demultiplexado de downlinks y opcodes
 
 ### 3. atcmd.c - AT Command Parser
 
@@ -117,10 +115,10 @@ typedef struct {
 ```
 
 **Memoria**:
-- Base: `0x0802E000` (últimos 8KB de flash)
-- Emulación EEPROM usando HAL Flash
-- Write: Erase page → Write word-by-word
-- Read: Direct memory access
+- Base: `0x08080000` (área de data EEPROM del STM32L072, 4KB)
+- Escritura byte a byte mediante acceso directo a `DATA_EEPROM`
+- Lectura directa desde memoria mapeada
+- Persistencia de claves/session counters y configuración AT
 
 ### 5. calibration.c - Remote Calibration
 
@@ -162,38 +160,20 @@ POWER_MODE_STOP   // <20 µA (RTC + flash standby)
 8. Continue execution
 ```
 
-## Integración con LoRaMAC Stack
+## Integración con Stack LoRaWAN Propio
 
-### Region AU915 Configuration
-
-```c
-// Sub-band 2 (channels 8-15)
-uint16_t channelMask[] = {0x0000, 0x00FF, 0x0000, 0x0000, 0x0000};
-//                        CH 0-15  CH 8-15 enabled
-```
-
-### Callbacks del Stack
-
-```
-LoRaMac Stack                  lorawan_app.c
-─────────────                  ─────────────
-LoRaMac_Init()        ←────    LoRaWANApp_Init()
-LoRaMac_Join()        ←────    LoRaWANApp_Join()
-LoRaMac_Send()        ←────    LoRaWANApp_SendUplink()
-
-[CALLBACKS]
-McpsConfirm()         ────→    OnMacMcpsRequest()
-McpsIndication()      ────→    OnRxData()
-MlmeConfirm()         ────→    OnMacMlmeRequest()
-```
+- `lorawan.c`: construcción de frames (MHDR, FHDR, MIC), gestión de contadores y ventanas RX
+- `lorawan_crypto.c`: primitives AES-128 y CMAC (Join MIC, Frame MIC, cifrado payload)
+- `lorawan_region_au915.c`: tabla de canales Sub-band 2, DR por canal y saltos de frecuencia
+- `lorawan_app.c`: persistencia de sesión (DevAddr, keys, frame counters) y callbacks hacia la aplicación
 
 ## Memory Map
 
 ```
 FLASH (192 KB):
 ├─ 0x08000000 - 0x08003FFF  (16 KB)  Bootloader (preservado)
-├─ 0x08004000 - 0x0802DFFF  (168 KB) Application code
-└─ 0x0802E000 - 0x0802FFFF  (8 KB)   EEPROM emulation
+├─ 0x08004000 - 0x0802FFFF  (176 KB) Aplicación
+└─ 0x08080000 - 0x08080FFF  (4 KB)   Data EEPROM (config + llaves)
 
 RAM (20 KB):
 ├─ 0x20000000 - 0x20003FFF  (16 KB)  Variables + Stack
@@ -315,7 +295,6 @@ DEBUG_PRINT("Uplink sent: %d bytes\r\n", size);
 
 **Notas de Implementación**:
 
-- Código sigue estilo del stack LoRaMac-node de Semtech
 - Compatible con LoRaWAN 1.0.3
 - Tested con TTN y ChirpStack
 - Cumple con regulaciones AU915 (ACMA)

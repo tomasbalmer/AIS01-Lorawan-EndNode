@@ -1,6 +1,6 @@
 # Dragino AIS01-LB Custom Firmware
 
-Custom firmware for Dragino AIS01-LB node based on STM32L072CZ and SX1276 radio, using Semtech's LoRaMAC-node stack for LoRaWAN AU915 Class A OTAA.
+Custom firmware for Dragino AIS01-LB node based on STM32L072CZ and SX1276 radio, featuring a compact in-house LoRaWAN Class A OTAA stack for AU915 Sub-band 2.
 
 ## Features
 
@@ -59,10 +59,9 @@ dragino-ais01lb-firmware/
 │   ├── app/              # Application code
 │   ├── board/            # Board support (STM32L072 + SX1276)
 │   ├── cmsis/            # CMSIS + HAL
-│   ├── mac/              # LoRaMAC stack (AU915 only)
+│   ├── lorawan/          # Minimal LoRaWAN stack (core, crypto, region)
 │   ├── radio/            # SX1276 driver
-│   ├── system/           # System utilities
-│   └── peripherals/      # Secure element
+│   └── system/           # System utilities
 ├── docs/                 # Documentation
 ├── Makefile              # Build system
 └── stm32l072xx_flash_app.ld  # Linker script
@@ -101,7 +100,7 @@ See [docs/README.md](docs/README.md) for complete list.
 
 ## License
 
-This firmware uses Semtech's LoRaMac-node stack (Revised BSD License).
+This firmware bundles third-party AES/CMAC implementations (see source headers) alongside original Waterplan code.
 
 ## Author
 

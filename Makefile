@@ -29,22 +29,19 @@ DEFS = -DSTM32L072xx -DUSE_HAL_DRIVER -DACTIVE_REGION=LORAMAC_REGION_AU915
 SRC_DIR = src
 BOARD_DIR = $(SRC_DIR)/board
 CMSIS_DIR = $(SRC_DIR)/cmsis
-MAC_DIR = $(SRC_DIR)/mac
 RADIO_DIR = $(SRC_DIR)/radio
 SYSTEM_DIR = $(SRC_DIR)/system
-PERIPHERALS_DIR = $(SRC_DIR)/peripherals
+LORAWAN_DIR = $(SRC_DIR)/lorawan
 
 # Include paths
 INCLUDES = \
 -I$(SRC_DIR)/app \
 -I$(BOARD_DIR) \
 -I$(CMSIS_DIR) \
--I$(MAC_DIR) \
--I$(MAC_DIR)/region \
 -I$(RADIO_DIR) \
 -I$(RADIO_DIR)/sx1276 \
 -I$(SYSTEM_DIR) \
--I$(PERIPHERALS_DIR)
+-I$(LORAWAN_DIR)
 
 # Application sources
 APP_SOURCES = \
@@ -73,20 +70,14 @@ $(BOARD_DIR)/sysIrqHandlers.c
 CMSIS_SOURCES = \
 $(CMSIS_DIR)/system_stm32l0xx.c
 
-# LoRaMAC sources
-MAC_SOURCES = \
-$(MAC_DIR)/LoRaMac.c \
-$(MAC_DIR)/LoRaMacAdr.c \
-$(MAC_DIR)/LoRaMacClassB.c \
-$(MAC_DIR)/LoRaMacCommands.c \
-$(MAC_DIR)/LoRaMacConfirmQueue.c \
-$(MAC_DIR)/LoRaMacCrypto.c \
-$(MAC_DIR)/LoRaMacParser.c \
-$(MAC_DIR)/LoRaMacSerializer.c \
-$(MAC_DIR)/region/Region.c \
-$(MAC_DIR)/region/RegionAU915.c \
-$(MAC_DIR)/region/RegionBaseUS.c \
-$(MAC_DIR)/region/RegionCommon.c
+# Minimal LoRaWAN stack sources
+LORAWAN_SOURCES = \
+$(LORAWAN_DIR)/lorawan.c \
+$(LORAWAN_DIR)/lorawan_crypto.c \
+$(LORAWAN_DIR)/lorawan_region.c \
+$(LORAWAN_DIR)/lorawan_region_au915.c \
+$(LORAWAN_DIR)/aes.c \
+$(LORAWAN_DIR)/cmac.c
 
 # Radio sources
 RADIO_SOURCES = \
@@ -100,21 +91,16 @@ $(SYSTEM_DIR)/timer.c \
 $(SYSTEM_DIR)/systime.c \
 $(SYSTEM_DIR)/nvmm.c \
 $(SYSTEM_DIR)/adc.c \
-$(SYSTEM_DIR)/uart.c
-
-# Peripherals sources
-PERIPHERAL_SOURCES = \
-$(PERIPHERALS_DIR)/soft-se/aes.c \
-$(PERIPHERALS_DIR)/soft-se/cmac.c \
-$(PERIPHERALS_DIR)/soft-se/soft-se.c
+$(SYSTEM_DIR)/uart.c \
+$(SYSTEM_DIR)/utilities.c
 
 # Startup file
 ASM_SOURCES = \
 $(CMSIS_DIR)/arm-gcc/startup_stm32l072xx.s
 
 # All sources
-SOURCES = $(APP_SOURCES) $(BOARD_SOURCES) $(CMSIS_SOURCES) $(MAC_SOURCES) \
-          $(RADIO_SOURCES) $(SYSTEM_SOURCES) $(PERIPHERAL_SOURCES)
+SOURCES = $(APP_SOURCES) $(BOARD_SOURCES) $(CMSIS_SOURCES) \
+          $(LORAWAN_SOURCES) $(RADIO_SOURCES) $(SYSTEM_SOURCES)
 
 # Objects
 OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(SOURCES:.c=.o)))

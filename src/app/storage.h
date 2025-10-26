@@ -25,6 +25,9 @@ typedef enum
     STORAGE_KEY_DEVEUI = 0,           /* DevEUI (8 bytes) */
     STORAGE_KEY_APPEUI,               /* AppEUI (8 bytes) */
     STORAGE_KEY_APPKEY,               /* AppKey (16 bytes) */
+    STORAGE_KEY_DEVADDR,              /* DevAddr (4 bytes) */
+    STORAGE_KEY_NWKSKEY,              /* NwkSKey (16 bytes) */
+    STORAGE_KEY_APPSKEY,              /* AppSKey (16 bytes) */
     STORAGE_KEY_TDC,                  /* Transmission Duty Cycle (4 bytes) */
     STORAGE_KEY_ADR,                  /* ADR Enable (1 byte) */
     STORAGE_KEY_DR,                   /* Data Rate (1 byte) */
@@ -37,6 +40,8 @@ typedef enum
     STORAGE_KEY_CLASS,                /* Device Class (1 byte) */
     STORAGE_KEY_CONFIRMED,            /* Confirmed messages (1 byte) */
     STORAGE_KEY_PORT,                 /* Application Port (1 byte) */
+    STORAGE_KEY_FCNTUP,               /* Uplink frame counter (4 bytes) */
+    STORAGE_KEY_FCNTDOWN,             /* Downlink frame counter (4 bytes) */
     STORAGE_KEY_CALIBRATION,          /* Calibration Data (variable) */
     STORAGE_KEY_MAX
 } StorageKey_t;
@@ -49,6 +54,9 @@ typedef struct
     uint8_t DevEui[8];
     uint8_t AppEui[8];
     uint8_t AppKey[16];
+    uint32_t DevAddr;
+    uint8_t NwkSKey[16];
+    uint8_t AppSKey[16];
     uint32_t TxDutyCycle;
     uint8_t AdrEnabled;
     uint8_t DataRate;
@@ -61,6 +69,8 @@ typedef struct
     uint8_t DeviceClass;
     uint8_t ConfirmedMsg;
     uint8_t AppPort;
+    uint32_t FrameCounterUp;
+    uint32_t FrameCounterDown;
     uint8_t CalibrationData[32];      /* Reserved for calibration parameters */
     uint32_t Crc;                     /* CRC32 for data integrity */
 } StorageData_t;
@@ -118,6 +128,9 @@ bool Storage_FactoryReset(void);
  * \retval true if valid data exists, false otherwise
  */
 bool Storage_IsValid(void);
+
+bool Storage_UpdateFrameCounters(uint32_t uplink, uint32_t downlink);
+bool Storage_UpdateJoinKeys(uint32_t devAddr, const uint8_t *nwkSKey, const uint8_t *appSKey);
 
 #ifdef __cplusplus
 }

@@ -62,9 +62,9 @@ extern "C"
 #define APP_FLASH_SIZE                      (176 * 1024) /* 176KB for app */
 
 /* EEPROM Emulation in Flash (last 8KB of flash) */
-#define EEPROM_BASE_ADDRESS                 0x0802E000
-#define EEPROM_SIZE                         (8 * 1024)
-#define EEPROM_PAGE_SIZE                    128
+#define EEPROM_BASE_ADDRESS                 0x08080000
+#define EEPROM_SIZE                         (4 * 1024)
+#define EEPROM_PAGE_SIZE                    64
 
 /* ============================================================================
  * POWER MANAGEMENT CONFIGURATION
