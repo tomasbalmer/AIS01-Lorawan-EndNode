@@ -12,13 +12,14 @@
 #include "board-config.h"
 #include "lpm-board.h"
 #include "board.h"
-#include "../app/config.h"
+#include "config.h"
 
-extern SX1276_t SX1276;
-
-#define ID1 (0x1FF80050U)
-#define ID2 (0x1FF80054U)
-#define ID3 (0x1FF80064U)
+/*!
+ * Unique Devices IDs register set ( STM32L0xxx )
+ */
+#define ID1 (0x1FF80050)
+#define ID2 (0x1FF80054)
+#define ID3 (0x1FF80064)
 
 static bool McuInitialized = false;
 Uart_t Uart2;
@@ -179,9 +180,29 @@ void LpmExitStopMode(void)
 void LpmEnterOffMode(void)
 {
     SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk;
-    PWR->CR |= PWR_CR_LPSDSR;
-    PWR->CR |= PWR_CR_CWUF;
+    PWR->CR |= PWR_CR_PDDS;
     __WFI();
+}
+
+#include <stdio.h>
+
+// Keil compiler
+int fputc(int c, FILE *stream)
+{
+    while (UartPutChar(&Uart2, (uint8_t)c) != 0)
+        ;
+    return c;
+}
+
+int fgetc(FILE *stream)
+{
+    uint8_t c = 0;
+    while (UartGetChar(&Uart2, &c) != 0)
+        ;
+    // Echo back the character
+    while (UartPutChar(&Uart2, c) != 0)
+        ;
+    return (int)c;
 }
 
 void LpmExitOffMode(void)

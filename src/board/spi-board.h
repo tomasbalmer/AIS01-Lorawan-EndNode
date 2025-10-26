@@ -1,7 +1,14 @@
 #ifndef SPI_BOARD_H
 #define SPI_BOARD_H
 
+#include <stdint.h>
 #include "system/spi.h"
+
+/* SPI Handle structure stub */
+typedef struct
+{
+    void *Instance;
+} SPI_HandleTypeDef;
 
 void SpiInit(Spi_t *obj, SpiId_t spiId, PinNames mosi, PinNames miso, PinNames sclk, PinNames nss);
 void SpiDeInit(Spi_t *obj);

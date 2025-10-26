@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdbool.h>
 #include "stm32l0xx.h"
 #include "utilities.h"
 #include "board.h"

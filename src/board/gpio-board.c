@@ -9,13 +9,20 @@ static GPIO_TypeDef *PinToPort(PinNames pin)
 {
     switch (pin & 0xF0)
     {
-    case 0x00: return GPIOA;
-    case 0x10: return GPIOB;
-    case 0x20: return GPIOC;
-    case 0x30: return GPIOD;
-    case 0x40: return GPIOE;
-    case 0x70: return GPIOH;
-    default:   return NULL;
+    case 0x00:
+        return GPIOA;
+    case 0x10:
+        return GPIOB;
+    case 0x20:
+        return GPIOC;
+    case 0x30:
+        return GPIOD;
+    case 0x40:
+        return GPIOE;
+    case 0x70:
+        return GPIOH;
+    default:
+        return NULL;
     }
 }
 
@@ -23,13 +30,20 @@ static uint32_t PinToClkMask(PinNames pin)
 {
     switch (pin & 0xF0)
     {
-    case 0x00: return RCC_IOPENR_IOPAEN;
-    case 0x10: return RCC_IOPENR_IOPBEN;
-    case 0x20: return RCC_IOPENR_IOPCEN;
-    case 0x30: return RCC_IOPENR_IOPDEN;
-    case 0x40: return RCC_IOPENR_IOPEEN;
-    case 0x70: return RCC_IOPENR_IOPHEN;
-    default:   return 0;
+    case 0x00:
+        return RCC_IOPENR_IOPAEN;
+    case 0x10:
+        return RCC_IOPENR_IOPBEN;
+    case 0x20:
+        return RCC_IOPENR_IOPCEN;
+    case 0x30:
+        return RCC_IOPENR_IOPDEN;
+    case 0x40:
+        return RCC_IOPENR_IOPEEN;
+    case 0x70:
+        return RCC_IOPENR_IOPHEN;
+    default:
+        return 0;
     }
 }
 
@@ -45,7 +59,7 @@ static uint8_t PinPortIndex(PinNames pin)
 
 void GpioMcuInit(Gpio_t *obj, PinNames pin, PinModes mode, PinConfigs config, PinTypes type, uint32_t value)
 {
-    if ((obj == NULL) || (pin == NC))
+    if (obj == NULL || pin == NC)
     {
         return;
     }
@@ -157,49 +171,59 @@ void GpioMcuSetContext(Gpio_t *obj, void *context)
 
 void GpioMcuSetInterrupt(Gpio_t *obj, IrqModes irqMode, IrqPriorities irqPriority, GpioIrqHandler *irqHandler)
 {
-    if ((obj == NULL) || (irqHandler == NULL))
+    if (obj == NULL || obj->pin == NC)
     {
         return;
     }
 
     uint8_t pinNum = PinNumber(obj->pin);
-    GPIO_TypeDef *port = (GPIO_TypeDef *)obj->port;
-    if (port == NULL)
-    {
-        return;
-    }
-
-    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
-
-    uint32_t extiIndex = pinNum >> 2;
-    uint32_t extiShift = (pinNum & 0x3U) * 4U;
-    uint32_t portIdx = PinPortIndex(obj->pin);
-    SYSCFG->EXTICR[extiIndex] = (SYSCFG->EXTICR[extiIndex] & ~(0xFU << extiShift)) | (portIdx << extiShift);
-
+    uint8_t portIndex = obj->portIndex;
     uint32_t line = obj->pinIndex;
 
-    EXTI->IMR |= line;
+    // Store IRQ handler
+    s_GpioIrq[pinNum] = obj;
+    obj->IrqHandler = irqHandler;
+
+    // Configure SYSCFG EXTI line
+    uint32_t extiCrIndex = pinNum >> 2;
+    uint32_t extiCrShift = (pinNum & 0x03) * 4U;
+    uint32_t mask = (0xFU << extiCrShift);
+
+    SYSCFG->EXTICR[extiCrIndex] = (SYSCFG->EXTICR[extiCrIndex] & ~mask) | (portIndex << extiCrShift);
+
+    // Configure trigger
     EXTI->RTSR &= ~line;
     EXTI->FTSR &= ~line;
 
-    if (irqMode == IRQ_RISING_EDGE || irqMode == IRQ_RISING_FALLING_EDGE)
+    switch (irqMode)
     {
+    case IRQ_RISING_EDGE:
         EXTI->RTSR |= line;
-    }
-    if (irqMode == IRQ_FALLING_EDGE || irqMode == IRQ_RISING_FALLING_EDGE)
-    {
+        break;
+    case IRQ_FALLING_EDGE:
         EXTI->FTSR |= line;
+        break;
+    case IRQ_RISING_FALLING_EDGE:
+        EXTI->RTSR |= line;
+        EXTI->FTSR |= line;
+        break;
+    default:
+        break;
     }
 
-    obj->IrqHandler = irqHandler;
-    s_GpioIrq[pinNum] = obj;
+    // Clear pending interrupt
+    EXTI->PR = line;
 
+    // Enable interrupt
+    EXTI->IMR |= line;
+
+    // Configure NVIC
     IRQn_Type irqn;
-    if (pinNum <= 1U)
+    if (pinNum <= 1)
     {
         irqn = EXTI0_1_IRQn;
     }
-    else if (pinNum <= 3U)
+    else if (pinNum <= 3)
     {
         irqn = EXTI2_3_IRQn;
     }

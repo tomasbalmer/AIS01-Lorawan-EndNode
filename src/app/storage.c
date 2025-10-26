@@ -15,8 +15,8 @@
 /* ============================================================================
  * PRIVATE DEFINITIONS
  * ========================================================================== */
-#define STORAGE_MAGIC               0xDEADBEEF
-#define STORAGE_VERSION             1
+#define STORAGE_MAGIC 0xDEADBEEF
+#define STORAGE_VERSION 1
 
 /* ============================================================================
  * PRIVATE TYPES
@@ -94,7 +94,7 @@ bool Storage_Load(StorageData_t *data)
     StorageBlock_t block;
 
     /* Read from flash */
-    if (!Storage_FlashRead(EEPROM_BASE_ADDRESS, (uint8_t*)&block, sizeof(StorageBlock_t)))
+    if (!Storage_FlashRead(EEPROM_BASE_ADDRESS, (uint8_t *)&block, sizeof(StorageBlock_t)))
     {
         return false;
     }
@@ -142,7 +142,7 @@ bool Storage_Save(const StorageData_t *data)
     }
 
     /* Write to flash */
-    bool result = Storage_FlashWrite(EEPROM_BASE_ADDRESS, (const uint8_t*)&block, sizeof(StorageBlock_t));
+    bool result = Storage_FlashWrite(EEPROM_BASE_ADDRESS, (const uint8_t *)&block, sizeof(StorageBlock_t));
 
     if (result)
     {
@@ -163,116 +163,157 @@ bool Storage_Read(StorageKey_t key, uint8_t *buffer, uint32_t size)
     /* Read from cache */
     switch (key)
     {
-        case STORAGE_KEY_DEVEUI:
-            if (size >= 8) memcpy(buffer, g_StorageCache.DevEui, 8);
-            else return false;
-            break;
-
-        case STORAGE_KEY_APPEUI:
-            if (size >= 8) memcpy(buffer, g_StorageCache.AppEui, 8);
-            else return false;
-            break;
-
-        case STORAGE_KEY_APPKEY:
-            if (size >= 16) memcpy(buffer, g_StorageCache.AppKey, 16);
-            else return false;
-            break;
-
-        case STORAGE_KEY_DEVADDR:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.DevAddr, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_NWKSKEY:
-            if (size >= 16) memcpy(buffer, g_StorageCache.NwkSKey, 16);
-            else return false;
-            break;
-
-        case STORAGE_KEY_APPSKEY:
-            if (size >= 16) memcpy(buffer, g_StorageCache.AppSKey, 16);
-            else return false;
-            break;
-
-        case STORAGE_KEY_TDC:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.TxDutyCycle, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_ADR:
-            if (size >= 1) *buffer = g_StorageCache.AdrEnabled;
-            else return false;
-            break;
-
-        case STORAGE_KEY_DR:
-            if (size >= 1) *buffer = g_StorageCache.DataRate;
-            else return false;
-            break;
-
-        case STORAGE_KEY_TXP:
-            if (size >= 1) *buffer = g_StorageCache.TxPower;
-            else return false;
-            break;
-
-        case STORAGE_KEY_RX2DR:
-            if (size >= 1) *buffer = g_StorageCache.Rx2DataRate;
-            else return false;
-            break;
-
-        case STORAGE_KEY_RX2FQ:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.Rx2Frequency, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_RX1DL:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.Rx1Delay, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_RX2DL:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.Rx2Delay, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_FREQBAND:
-            if (size >= 1) *buffer = g_StorageCache.FreqBand;
-            else return false;
-            break;
-
-        case STORAGE_KEY_CLASS:
-            if (size >= 1) *buffer = g_StorageCache.DeviceClass;
-            else return false;
-            break;
-
-        case STORAGE_KEY_CONFIRMED:
-            if (size >= 1) *buffer = g_StorageCache.ConfirmedMsg;
-            else return false;
-            break;
-
-        case STORAGE_KEY_PORT:
-            if (size >= 1) *buffer = g_StorageCache.AppPort;
-            else return false;
-            break;
-
-        case STORAGE_KEY_FCNTUP:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.FrameCounterUp, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_FCNTDOWN:
-            if (size >= 4) memcpy(buffer, &g_StorageCache.FrameCounterDown, 4);
-            else return false;
-            break;
-
-        case STORAGE_KEY_CALIBRATION:
-            if (size >= sizeof(g_StorageCache.CalibrationData))
-            {
-                memcpy(buffer, g_StorageCache.CalibrationData, sizeof(g_StorageCache.CalibrationData));
-            }
-            else return false;
-            break;
-
-        default:
+    case STORAGE_KEY_DEVEUI:
+        if (size >= 8)
+            memcpy(buffer, g_StorageCache.DevEui, 8);
+        else
             return false;
+        break;
+
+    case STORAGE_KEY_APPEUI:
+        if (size >= 8)
+            memcpy(buffer, g_StorageCache.AppEui, 8);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_APPKEY:
+        if (size >= 16)
+            memcpy(buffer, g_StorageCache.AppKey, 16);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_DEVADDR:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.DevAddr, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_NWKSKEY:
+        if (size >= 16)
+            memcpy(buffer, g_StorageCache.NwkSKey, 16);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_APPSKEY:
+        if (size >= 16)
+            memcpy(buffer, g_StorageCache.AppSKey, 16);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_TDC:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.TxDutyCycle, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_ADR:
+        if (size >= 1)
+            *buffer = g_StorageCache.AdrEnabled;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_DR:
+        if (size >= 1)
+            *buffer = g_StorageCache.DataRate;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_TXP:
+        if (size >= 1)
+            *buffer = g_StorageCache.TxPower;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_RX2DR:
+        if (size >= 1)
+            *buffer = g_StorageCache.Rx2DataRate;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_RX2FQ:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.Rx2Frequency, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_RX1DL:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.Rx1Delay, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_RX2DL:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.Rx2Delay, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_FREQBAND:
+        if (size >= 1)
+            *buffer = g_StorageCache.FreqBand;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_CLASS:
+        if (size >= 1)
+            *buffer = g_StorageCache.DeviceClass;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_CONFIRMED:
+        if (size >= 1)
+            *buffer = g_StorageCache.ConfirmedMsg;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_PORT:
+        if (size >= 1)
+            *buffer = g_StorageCache.AppPort;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_FCNTUP:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.FrameCounterUp, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_FCNTDOWN:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.FrameCounterDown, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_CALIBRATION:
+        if (size >= sizeof(g_StorageCache.CalibrationData))
+        {
+            memcpy(buffer, g_StorageCache.CalibrationData, sizeof(g_StorageCache.CalibrationData));
+        }
+        else
+            return false;
+        break;
+
+    default:
+        return false;
     }
 
     return true;
@@ -287,113 +328,134 @@ bool Storage_Write(StorageKey_t key, const uint8_t *buffer, uint32_t size)
 
     switch (key)
     {
-        case STORAGE_KEY_DEVEUI:
-            if (size != 8) return false;
-            memcpy(g_StorageCache.DevEui, buffer, 8);
-            break;
-
-        case STORAGE_KEY_APPEUI:
-            if (size != 8) return false;
-            memcpy(g_StorageCache.AppEui, buffer, 8);
-            break;
-
-        case STORAGE_KEY_APPKEY:
-            if (size != 16) return false;
-            memcpy(g_StorageCache.AppKey, buffer, 16);
-            break;
-
-        case STORAGE_KEY_DEVADDR:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.DevAddr, buffer, 4);
-            break;
-
-        case STORAGE_KEY_NWKSKEY:
-            if (size != 16) return false;
-            memcpy(g_StorageCache.NwkSKey, buffer, 16);
-            break;
-
-        case STORAGE_KEY_APPSKEY:
-            if (size != 16) return false;
-            memcpy(g_StorageCache.AppSKey, buffer, 16);
-            break;
-
-        case STORAGE_KEY_TDC:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.TxDutyCycle, buffer, 4);
-            break;
-
-        case STORAGE_KEY_ADR:
-            if (size != 1) return false;
-            g_StorageCache.AdrEnabled = *buffer;
-            break;
-
-        case STORAGE_KEY_DR:
-            if (size != 1) return false;
-            g_StorageCache.DataRate = *buffer;
-            break;
-
-        case STORAGE_KEY_TXP:
-            if (size != 1) return false;
-            g_StorageCache.TxPower = *buffer;
-            break;
-
-        case STORAGE_KEY_RX2DR:
-            if (size != 1) return false;
-            g_StorageCache.Rx2DataRate = *buffer;
-            break;
-
-        case STORAGE_KEY_RX2FQ:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.Rx2Frequency, buffer, 4);
-            break;
-
-        case STORAGE_KEY_RX1DL:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.Rx1Delay, buffer, 4);
-            break;
-
-        case STORAGE_KEY_RX2DL:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.Rx2Delay, buffer, 4);
-            break;
-
-        case STORAGE_KEY_FREQBAND:
-            if (size != 1) return false;
-            g_StorageCache.FreqBand = *buffer;
-            break;
-
-        case STORAGE_KEY_CLASS:
-            if (size != 1) return false;
-            g_StorageCache.DeviceClass = *buffer;
-            break;
-
-        case STORAGE_KEY_CONFIRMED:
-            if (size != 1) return false;
-            g_StorageCache.ConfirmedMsg = *buffer;
-            break;
-
-        case STORAGE_KEY_PORT:
-            if (size != 1) return false;
-            g_StorageCache.AppPort = *buffer;
-            break;
-
-        case STORAGE_KEY_FCNTUP:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.FrameCounterUp, buffer, 4);
-            break;
-
-        case STORAGE_KEY_FCNTDOWN:
-            if (size != 4) return false;
-            memcpy(&g_StorageCache.FrameCounterDown, buffer, 4);
-            break;
-
-        case STORAGE_KEY_CALIBRATION:
-            if (size > sizeof(g_StorageCache.CalibrationData)) return false;
-            memcpy(g_StorageCache.CalibrationData, buffer, size);
-            break;
-
-        default:
+    case STORAGE_KEY_DEVEUI:
+        if (size != 8)
             return false;
+        memcpy(g_StorageCache.DevEui, buffer, 8);
+        break;
+
+    case STORAGE_KEY_APPEUI:
+        if (size != 8)
+            return false;
+        memcpy(g_StorageCache.AppEui, buffer, 8);
+        break;
+
+    case STORAGE_KEY_APPKEY:
+        if (size != 16)
+            return false;
+        memcpy(g_StorageCache.AppKey, buffer, 16);
+        break;
+
+    case STORAGE_KEY_DEVADDR:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.DevAddr, buffer, 4);
+        break;
+
+    case STORAGE_KEY_NWKSKEY:
+        if (size != 16)
+            return false;
+        memcpy(g_StorageCache.NwkSKey, buffer, 16);
+        break;
+
+    case STORAGE_KEY_APPSKEY:
+        if (size != 16)
+            return false;
+        memcpy(g_StorageCache.AppSKey, buffer, 16);
+        break;
+
+    case STORAGE_KEY_TDC:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.TxDutyCycle, buffer, 4);
+        break;
+
+    case STORAGE_KEY_ADR:
+        if (size != 1)
+            return false;
+        g_StorageCache.AdrEnabled = *buffer;
+        break;
+
+    case STORAGE_KEY_DR:
+        if (size != 1)
+            return false;
+        g_StorageCache.DataRate = *buffer;
+        break;
+
+    case STORAGE_KEY_TXP:
+        if (size != 1)
+            return false;
+        g_StorageCache.TxPower = *buffer;
+        break;
+
+    case STORAGE_KEY_RX2DR:
+        if (size != 1)
+            return false;
+        g_StorageCache.Rx2DataRate = *buffer;
+        break;
+
+    case STORAGE_KEY_RX2FQ:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.Rx2Frequency, buffer, 4);
+        break;
+
+    case STORAGE_KEY_RX1DL:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.Rx1Delay, buffer, 4);
+        break;
+
+    case STORAGE_KEY_RX2DL:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.Rx2Delay, buffer, 4);
+        break;
+
+    case STORAGE_KEY_FREQBAND:
+        if (size != 1)
+            return false;
+        g_StorageCache.FreqBand = *buffer;
+        break;
+
+    case STORAGE_KEY_CLASS:
+        if (size != 1)
+            return false;
+        g_StorageCache.DeviceClass = *buffer;
+        break;
+
+    case STORAGE_KEY_CONFIRMED:
+        if (size != 1)
+            return false;
+        g_StorageCache.ConfirmedMsg = *buffer;
+        break;
+
+    case STORAGE_KEY_PORT:
+        if (size != 1)
+            return false;
+        g_StorageCache.AppPort = *buffer;
+        break;
+
+    case STORAGE_KEY_FCNTUP:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.FrameCounterUp, buffer, 4);
+        break;
+
+    case STORAGE_KEY_FCNTDOWN:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.FrameCounterDown, buffer, 4);
+        break;
+
+    case STORAGE_KEY_CALIBRATION:
+        if (size > sizeof(g_StorageCache.CalibrationData))
+            return false;
+        memcpy(g_StorageCache.CalibrationData, buffer, size);
+        break;
+
+    default:
+        return false;
     }
 
     return Storage_Save(&g_StorageCache);
@@ -417,7 +479,7 @@ bool Storage_IsValid(void)
 {
     StorageBlock_t block;
 
-    if (!Storage_FlashRead(EEPROM_BASE_ADDRESS, (uint8_t*)&block, sizeof(StorageBlock_t)))
+    if (!Storage_FlashRead(EEPROM_BASE_ADDRESS, (uint8_t *)&block, sizeof(StorageBlock_t)))
     {
         return false;
     }
@@ -464,7 +526,7 @@ static uint32_t Storage_CalculateCrc(const StorageData_t *data)
 {
     /* Simple CRC32 calculation (use HAL CRC peripheral if available) */
     uint32_t crc = 0xFFFFFFFF;
-    const uint8_t *ptr = (const uint8_t*)data;
+    const uint8_t *ptr = (const uint8_t *)data;
     uint32_t size = sizeof(StorageData_t) - sizeof(uint32_t); /* Exclude CRC field */
 
     for (uint32_t i = 0; i < size; i++)

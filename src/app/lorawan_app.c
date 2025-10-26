@@ -1,5 +1,7 @@
 #include <string.h>
+#include <string.h>
 #include "lorawan_app.h"
+#include "lorawan.h"
 #include "lorawan.h"
 #include "config.h"
 #include "storage.h"
@@ -22,7 +24,7 @@ static const LoRaWANCallbacks_t g_Callbacks = {
     .OnJoinSuccess = OnJoinSuccess,
     .OnJoinFailure = OnJoinFailure,
     .OnTxComplete = OnTxComplete,
-    .OnRxData = OnRxData,
+    .OnRxData = OnRxData
 };
 
 static void LoRaWANApp_LoadSettings(const StorageData_t *storage)
@@ -156,67 +158,67 @@ static void HandleDownlinkOpcode(const uint8_t *payload, uint8_t size)
 
     switch (payload[0])
     {
-        case 0x01: /* Set TDC */
+    case 0x01: /* Set TDC */
+    {
+        if (size >= 5)
         {
-            if (size >= 5)
-            {
-                uint32_t interval = 0;
-                memcpy(&interval, &payload[1], sizeof(uint32_t));
-                Storage_Write(STORAGE_KEY_TDC, (uint8_t *)&interval, sizeof(uint32_t));
-                g_Settings.TxDutyCycleMs = interval;
-                g_LoRaCtx.Settings.TxDutyCycleMs = interval;
-            }
-            break;
+            uint32_t interval = 0;
+            memcpy(&interval, &payload[1], sizeof(uint32_t));
+            Storage_Write(STORAGE_KEY_TDC, (uint8_t *)&interval, sizeof(uint32_t));
+            g_Settings.TxDutyCycleMs = interval;
+            g_LoRaCtx.Settings.TxDutyCycleMs = interval;
         }
+        break;
+    }
 
-        case 0x21: /* ADR */
+    case 0x21: /* ADR */
+    {
+        if (size >= 2)
         {
-            if (size >= 2)
-            {
-                uint8_t adr = payload[1] ? 1 : 0;
-                Storage_Write(STORAGE_KEY_ADR, &adr, 1);
-                g_Settings.AdrState = adr ? LORAWAN_ADR_ON : LORAWAN_ADR_OFF;
-                g_LoRaCtx.Settings.AdrState = g_Settings.AdrState;
-            }
-            break;
+            uint8_t adr = payload[1] ? 1 : 0;
+            Storage_Write(STORAGE_KEY_ADR, &adr, 1);
+            g_Settings.AdrState = adr ? LORAWAN_ADR_ON : LORAWAN_ADR_OFF;
+            g_LoRaCtx.Settings.AdrState = g_Settings.AdrState;
         }
+        break;
+    }
 
-        case 0x22: /* Data rate */
+    case 0x22: /* Data rate */
+    {
+        if (size >= 2)
         {
-            if (size >= 2)
-            {
-                uint8_t dr = payload[1];
-                Storage_Write(STORAGE_KEY_DR, &dr, 1);
-                g_Settings.DataRate = dr;
-                g_LoRaCtx.Settings.DataRate = dr;
-            }
-            break;
+            uint8_t dr = payload[1];
+            Storage_Write(STORAGE_KEY_DR, &dr, 1);
+            g_Settings.DataRate = dr;
+            g_LoRaCtx.Settings.DataRate = dr;
         }
+        break;
+    }
 
-        case 0x23: /* TX power */
+    case 0x23: /* TX power */
+    {
+        if (size >= 2)
         {
-            if (size >= 2)
-            {
-                uint8_t txp = payload[1];
-                Storage_Write(STORAGE_KEY_TXP, &txp, 1);
-                g_Settings.TxPower = txp;
-                g_LoRaCtx.Settings.TxPower = txp;
-            }
-            break;
+            uint8_t txp = payload[1];
+            Storage_Write(STORAGE_KEY_TXP, &txp, 1);
+            g_Settings.TxPower = txp;
+            g_LoRaCtx.Settings.TxPower = txp;
         }
+        break;
+    }
 
-        case 0xA0: /* Remote calibration */
+    case 0xA0: /* Remote calibration */
+    {
+        uint8_t response[32];
+        uint8_t responseSize = 0;
+        if (Calibration_ProcessDownlink(payload, size, response, &responseSize))
         {
-            uint8_t response[32];
-            uint8_t responseSize = 0;
-            if (Calibration_ProcessDownlink(payload, size, response, &responseSize))
-            {
-            }
-            break;
         }
+        break;
+    }
 
-        default:
-            break;
+    default:
+        break;
     }
 }
 
