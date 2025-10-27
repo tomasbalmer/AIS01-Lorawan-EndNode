@@ -1,11 +1,10 @@
 #include <string.h>
-#include <string.h>
 #include "lorawan_app.h"
-#include "lorawan.h"
 #include "lorawan.h"
 #include "config.h"
 #include "storage.h"
 #include "calibration.h"
+#include "atcmd.h"
 
 #define DOWNLINK_MIN_SIZE 1
 
@@ -37,6 +36,8 @@ static void LoRaWANApp_LoadSettings(const StorageData_t *storage)
     g_Session.DevAddr = storage->DevAddr;
     g_Session.FCntUp = storage->FrameCounterUp;
     g_Session.FCntDown = storage->FrameCounterDown;
+    g_Session.JoinMode = (LoRaWANJoinMode_t)storage->JoinMode;
+    g_Session.DisableFrameCounterCheck = (storage->DisableFrameCounterCheck != 0);
     g_Session.Joined = (storage->DevAddr != 0);
     g_Session.DevNonceCounter = 0;
 
@@ -75,6 +76,27 @@ bool LoRaWANApp_Init(void)
     }
 
     LoRaWANApp_LoadSettings(&storage);
+
+    /* ABP mode activation */
+    if (g_Session.JoinMode == LORAWAN_JOIN_MODE_ABP)
+    {
+        /* ABP mode: activate session immediately if DevAddr is configured */
+        if (g_Session.DevAddr != 0)
+        {
+            g_Session.Joined = true;
+            DEBUG_PRINT("ABP mode activated, DevAddr=0x%08X\r\n", g_Session.DevAddr);
+        }
+        else
+        {
+            g_Session.Joined = false;
+            DEBUG_PRINT("ABP mode: DevAddr not configured\r\n");
+        }
+    }
+    else
+    {
+        /* OTAA mode: wait for join */
+        g_Session.Joined = false;
+    }
 
     g_LoRaCtx.Session = &g_Session;
     g_LoRaCtx.Settings = g_Settings;
@@ -147,6 +169,9 @@ static void OnJoinFailure(void)
 static void OnTxComplete(LoRaWANStatus_t status)
 {
     g_AppStatus = (status == LORAWAN_STATUS_SUCCESS) ? LORAWAN_STATUS_SEND_SUCCESS : LORAWAN_STATUS_SEND_FAILED;
+
+    /* Update confirmed message status for AT commands */
+    ATCmd_UpdateConfirmedStatus(status == LORAWAN_STATUS_SUCCESS ? 1 : 2);
 }
 
 static void HandleDownlinkOpcode(const uint8_t *payload, uint8_t size)
@@ -225,7 +250,11 @@ static void HandleDownlinkOpcode(const uint8_t *payload, uint8_t size)
 static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t rssi, int8_t snr)
 {
     (void)port;
-    (void)rssi;
-    (void)snr;
+
+    /* Update RSSI and SNR for AT commands */
+    ATCmd_UpdateRSSI(rssi);
+    ATCmd_UpdateSNR(snr);
+    ATCmd_UpdatePendingDownlink(size > 0 ? 1 : 0);
+
     HandleDownlinkOpcode(buffer, size);
 }

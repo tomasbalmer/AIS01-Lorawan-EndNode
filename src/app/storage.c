@@ -69,12 +69,18 @@ bool Storage_Init(void)
         g_StorageCache.Rx2Frequency = LORAWAN_RX2_FREQUENCY;
         g_StorageCache.Rx1Delay = LORAWAN_RX1_DELAY;
         g_StorageCache.Rx2Delay = LORAWAN_RX2_DELAY;
+        g_StorageCache.JoinRx1Delay = LORAWAN_JOIN_RX1_DELAY;
+        g_StorageCache.JoinRx2Delay = LORAWAN_JOIN_RX2_DELAY;
         g_StorageCache.FreqBand = LORAWAN_AU915_SUB_BAND;
         g_StorageCache.DeviceClass = LORAWAN_DEFAULT_CLASS;
         g_StorageCache.ConfirmedMsg = (LORAWAN_DEFAULT_CONFIRMED_MSG != 0);
         g_StorageCache.AppPort = LORAWAN_DEFAULT_APP_PORT;
         g_StorageCache.FrameCounterUp = 0;
         g_StorageCache.FrameCounterDown = 0;
+        g_StorageCache.JoinMode = 1;  /* Default: OTAA */
+        g_StorageCache.DisableFrameCounterCheck = 0;  /* Default: frame counter check enabled */
+        g_StorageCache.RetryCount = LORAWAN_DEFAULT_RETRY_COUNT;
+        g_StorageCache.RetryDelay = LORAWAN_DEFAULT_RETRY_DELAY;
 
         /* Calculate and store CRC */
         g_StorageCache.Crc = Storage_CalculateCrc(&g_StorageCache);
@@ -261,6 +267,20 @@ bool Storage_Read(StorageKey_t key, uint8_t *buffer, uint32_t size)
             return false;
         break;
 
+    case STORAGE_KEY_JRX1DL:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.JoinRx1Delay, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_JRX2DL:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.JoinRx2Delay, 4);
+        else
+            return false;
+        break;
+
     case STORAGE_KEY_FREQBAND:
         if (size >= 1)
             *buffer = g_StorageCache.FreqBand;
@@ -299,6 +319,34 @@ bool Storage_Read(StorageKey_t key, uint8_t *buffer, uint32_t size)
     case STORAGE_KEY_FCNTDOWN:
         if (size >= 4)
             memcpy(buffer, &g_StorageCache.FrameCounterDown, 4);
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_JOIN_MODE:
+        if (size >= 1)
+            *buffer = g_StorageCache.JoinMode;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_DISABLE_FCNT:
+        if (size >= 1)
+            *buffer = g_StorageCache.DisableFrameCounterCheck;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_RETRY:
+        if (size >= 1)
+            *buffer = g_StorageCache.RetryCount;
+        else
+            return false;
+        break;
+
+    case STORAGE_KEY_RETRY_DELAY:
+        if (size >= 4)
+            memcpy(buffer, &g_StorageCache.RetryDelay, 4);
         else
             return false;
         break;
@@ -412,6 +460,18 @@ bool Storage_Write(StorageKey_t key, const uint8_t *buffer, uint32_t size)
         memcpy(&g_StorageCache.Rx2Delay, buffer, 4);
         break;
 
+    case STORAGE_KEY_JRX1DL:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.JoinRx1Delay, buffer, 4);
+        break;
+
+    case STORAGE_KEY_JRX2DL:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.JoinRx2Delay, buffer, 4);
+        break;
+
     case STORAGE_KEY_FREQBAND:
         if (size != 1)
             return false;
@@ -446,6 +506,30 @@ bool Storage_Write(StorageKey_t key, const uint8_t *buffer, uint32_t size)
         if (size != 4)
             return false;
         memcpy(&g_StorageCache.FrameCounterDown, buffer, 4);
+        break;
+
+    case STORAGE_KEY_JOIN_MODE:
+        if (size != 1)
+            return false;
+        g_StorageCache.JoinMode = *buffer;
+        break;
+
+    case STORAGE_KEY_DISABLE_FCNT:
+        if (size != 1)
+            return false;
+        g_StorageCache.DisableFrameCounterCheck = *buffer;
+        break;
+
+    case STORAGE_KEY_RETRY:
+        if (size != 1)
+            return false;
+        g_StorageCache.RetryCount = *buffer;
+        break;
+
+    case STORAGE_KEY_RETRY_DELAY:
+        if (size != 4)
+            return false;
+        memcpy(&g_StorageCache.RetryDelay, buffer, 4);
         break;
 
     case STORAGE_KEY_CALIBRATION:

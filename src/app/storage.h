@@ -36,12 +36,18 @@ extern "C"
         STORAGE_KEY_RX2FQ,       /* RX2 Frequency (4 bytes) */
         STORAGE_KEY_RX1DL,       /* RX1 Delay (4 bytes) */
         STORAGE_KEY_RX2DL,       /* RX2 Delay (4 bytes) */
+        STORAGE_KEY_JRX1DL,      /* Join RX1 Delay (4 bytes) */
+        STORAGE_KEY_JRX2DL,      /* Join RX2 Delay (4 bytes) */
         STORAGE_KEY_FREQBAND,    /* Frequency Sub-band (1 byte) */
         STORAGE_KEY_CLASS,       /* Device Class (1 byte) */
         STORAGE_KEY_CONFIRMED,   /* Confirmed messages (1 byte) */
         STORAGE_KEY_PORT,        /* Application Port (1 byte) */
         STORAGE_KEY_FCNTUP,      /* Uplink frame counter (4 bytes) */
         STORAGE_KEY_FCNTDOWN,    /* Downlink frame counter (4 bytes) */
+        STORAGE_KEY_JOIN_MODE,   /* Join mode: 0=ABP, 1=OTAA (1 byte) */
+        STORAGE_KEY_DISABLE_FCNT,/* Disable frame counter check (1 byte) */
+        STORAGE_KEY_RETRY,       /* Confirmed message retry count (1 byte) */
+        STORAGE_KEY_RETRY_DELAY, /* Delay between retries (4 bytes) */
         STORAGE_KEY_CALIBRATION, /* Calibration Data (variable) */
         STORAGE_KEY_MAX
     } StorageKey_t;
@@ -65,12 +71,18 @@ extern "C"
         uint32_t Rx2Frequency;
         uint32_t Rx1Delay;
         uint32_t Rx2Delay;
+        uint32_t JoinRx1Delay;
+        uint32_t JoinRx2Delay;
         uint8_t FreqBand;
         uint8_t DeviceClass;
         uint8_t ConfirmedMsg;
         uint8_t AppPort;
         uint32_t FrameCounterUp;
         uint32_t FrameCounterDown;
+        uint8_t JoinMode;            /* Join mode: 0=ABP, 1=OTAA */
+        uint8_t DisableFrameCounterCheck; /* Disable frame counter check for testing */
+        uint8_t RetryCount;          /* Confirmed message retry count */
+        uint32_t RetryDelay;         /* Delay between retries (ms) */
         uint8_t CalibrationData[32]; /* Reserved for calibration parameters */
         uint32_t Crc;                /* CRC32 for data integrity */
     } StorageData_t;

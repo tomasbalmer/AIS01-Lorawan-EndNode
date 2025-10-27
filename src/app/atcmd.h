@@ -64,6 +64,30 @@ void ATCmd_SendResponse(const char *response);
  */
 void ATCmd_SendFormattedResponse(const char *format, ...);
 
+/*!
+ * \brief Updates last received RSSI value
+ * \param [in] rssi RSSI value in dBm
+ */
+void ATCmd_UpdateRSSI(int16_t rssi);
+
+/*!
+ * \brief Updates last received SNR value
+ * \param [in] snr SNR value in dB
+ */
+void ATCmd_UpdateSNR(int8_t snr);
+
+/*!
+ * \brief Updates pending downlink status
+ * \param [in] pending Number of pending downlinks
+ */
+void ATCmd_UpdatePendingDownlink(uint8_t pending);
+
+/*!
+ * \brief Updates confirmed message status
+ * \param [in] status 0=pending, 1=success, 2=failed
+ */
+void ATCmd_UpdateConfirmedStatus(uint8_t status);
+
 #ifdef __cplusplus
 }
 #endif

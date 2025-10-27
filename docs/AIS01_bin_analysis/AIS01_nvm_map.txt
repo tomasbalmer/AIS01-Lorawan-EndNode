@@ -1,0 +1,17 @@
+# nvm_map.txt (TENTATIVO)
+Candidatos de base en Data EEPROM (0x08080000-0x08081FFF):
+- 0x08080808 (freq=6)
+- 0x08080809 (freq=3)
+- 0x0808090A (freq=3)
+- 0x08080202 (freq=2)
+- 0x080801F9 (freq=1)
+- 0x08080100 (freq=1)
+- 0x08080310 (freq=1)
+- 0x080801FD (freq=1)
+
+Campos probables (inferidos por strings):
+- magic/version
+- SYNCMOD (u8)
+- TIMESTAMP (u32)
+- Flags FDR
+- Otros parámetros AT

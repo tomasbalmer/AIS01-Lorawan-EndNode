@@ -56,6 +56,14 @@ extern "C"
 #define LORAWAN_RX1_DELAY 1000
 #define LORAWAN_RX2_DELAY 2000
 
+/* Join RX Delays (milliseconds) */
+#define LORAWAN_JOIN_RX1_DELAY 5000
+#define LORAWAN_JOIN_RX2_DELAY 6000
+
+/* Retry Configuration for Confirmed Messages */
+#define LORAWAN_DEFAULT_RETRY_COUNT 3
+#define LORAWAN_DEFAULT_RETRY_DELAY 1000  /* 1 second between retries */
+
 /* ============================================================================
  * FLASH MEMORY CONFIGURATION
  * ========================================================================== */

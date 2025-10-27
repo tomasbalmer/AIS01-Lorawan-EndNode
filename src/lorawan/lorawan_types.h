@@ -15,6 +15,12 @@ typedef enum
 
 typedef enum
 {
+    LORAWAN_JOIN_MODE_ABP = 0,
+    LORAWAN_JOIN_MODE_OTAA = 1,
+} LoRaWANJoinMode_t;
+
+typedef enum
+{
     LORAWAN_REGION_AU915 = 0,
 } LoRaWANRegion_t;
 
@@ -52,6 +58,8 @@ typedef struct
     uint32_t FCntUp;
     uint32_t FCntDown;
     bool Joined;
+    LoRaWANJoinMode_t JoinMode;  /* OTAA or ABP */
+    bool DisableFrameCounterCheck; /* Skip counter validation for testing */
 } LoRaWANSession_t;
 
 typedef struct
