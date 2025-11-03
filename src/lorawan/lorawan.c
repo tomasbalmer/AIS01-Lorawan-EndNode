@@ -1,10 +1,11 @@
 #include "lorawan.h"
 #include "lorawan_crypto.h"
 #include "lorawan_region.h"
-#include "radio/sx1276/sx1276.h"
+#include "radio.h"
 #include "board/board.h"
 #include "storage.h"
 #include "config.h"
+#include "timer.h"
 #include <string.h>
 
 #define UPSTREAM_DIR   0
@@ -14,7 +15,41 @@ static LoRaWANStatus_t LoRaWAN_BuildJoinRequest(LoRaWANContext_t *ctx, uint8_t *
 static LoRaWANStatus_t LoRaWAN_ParseJoinAccept(LoRaWANContext_t *ctx, const uint8_t *buffer, uint8_t size);
 static LoRaWANStatus_t LoRaWAN_BuildUplink(LoRaWANContext_t *ctx, const uint8_t *buffer, uint8_t size, uint8_t port, LoRaWANMsgType_t msgType, uint8_t *out, uint8_t *outLen);
 
-extern SX1276_t SX1276;
+typedef enum
+{
+    LORAWAN_OP_NONE = 0,
+    LORAWAN_OP_JOIN,
+    LORAWAN_OP_TX
+} LoRaWANOperation_t;
+
+static LoRaWANContext_t *g_ActiveCtx = NULL;
+static RadioEvents_t g_RadioEvents;
+static TimerEvent_t g_Rx1Timer;
+static TimerEvent_t g_Rx2Timer;
+static LoRaWANOperation_t g_CurrentOp = LORAWAN_OP_NONE;
+static uint8_t g_ActiveRxWindow = 0;
+static bool g_RadioInitialized = false;
+static bool g_Rx1Pending = false;
+static bool g_Rx2Pending = false;
+static uint32_t g_LastTxFrequency = 0;
+static uint8_t g_LastTxDatarate = 0;
+static uint8_t g_LastTxChannel = 0;
+
+static void OnRadioTxDone(void);
+static void OnRadioTxTimeout(void);
+static void OnRadioRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr);
+static void OnRadioRxTimeout(void);
+static void OnRadioRxError(void);
+static void OnRx1TimerEvent(void *context);
+static void OnRx2TimerEvent(void *context);
+static bool LoRaWAN_GetPhyParams(uint8_t dr, uint32_t *bandwidth, uint8_t *spreadingFactor);
+static int8_t LoRaWAN_ComputeTxPowerDbm(uint8_t txPowerIndex, const LoRaWANRegionParams_t *region);
+static void LoRaWAN_ResetRxTracking(void);
+static void LoRaWAN_ScheduleRxWindows(LoRaWANContext_t *ctx);
+static void LoRaWAN_OpenRxWindow(uint8_t window);
+static void LoRaWAN_HandleRxWindowComplete(void);
+static void LoRaWAN_HandleJoinFailure(void);
+static LoRaWANStatus_t LoRaWAN_HandleJoinAccept(LoRaWANContext_t *ctx, const uint8_t *buffer, uint8_t size);
 
 LoRaWANStatus_t LoRaWAN_Init(LoRaWANContext_t *ctx)
 {
@@ -23,10 +58,32 @@ LoRaWANStatus_t LoRaWAN_Init(LoRaWANContext_t *ctx)
         return LORAWAN_STATUS_INVALID_PARAM;
     }
 
+    g_ActiveCtx = ctx;
     ctx->Session->Joined = false;
 
-    SX1276SetPublicNetwork( true );
+    if (!g_RadioInitialized)
+    {
+        memset(&g_RadioEvents, 0, sizeof(g_RadioEvents));
+        g_RadioEvents.TxDone = OnRadioTxDone;
+        g_RadioEvents.TxTimeout = OnRadioTxTimeout;
+        g_RadioEvents.RxDone = OnRadioRxDone;
+        g_RadioEvents.RxTimeout = OnRadioRxTimeout;
+        g_RadioEvents.RxError = OnRadioRxError;
+        Radio.Init(&g_RadioEvents);
+        Radio.SetPublicNetwork(true);
 
+        TimerInit(&g_Rx1Timer, OnRx1TimerEvent);
+        TimerInit(&g_Rx2Timer, OnRx2TimerEvent);
+        TimerSetContext(&g_Rx1Timer, (void *)1);
+        TimerSetContext(&g_Rx2Timer, (void *)2);
+
+        g_RadioInitialized = true;
+    }
+
+    g_CurrentOp = LORAWAN_OP_NONE;
+    LoRaWAN_ResetRxTracking();
+
+    g_LastTxDatarate = ctx->Settings.DataRate;
     return LORAWAN_STATUS_SUCCESS;
 }
 
@@ -36,6 +93,7 @@ LoRaWANStatus_t LoRaWAN_RequestJoin(LoRaWANContext_t *ctx)
     {
         return LORAWAN_STATUS_INVALID_PARAM;
     }
+
     uint8_t frame[32];
     uint8_t frameLen = 0;
     LoRaWANStatus_t status = LoRaWAN_BuildJoinRequest(ctx, frame, &frameLen);
@@ -44,11 +102,41 @@ LoRaWANStatus_t LoRaWAN_RequestJoin(LoRaWANContext_t *ctx)
         return status;
     }
 
-    SX1276SetChannel( LoRaWAN_RegionGetJoinFrequency(ctx->Settings.Region, ctx->Session->DevNonceCounter) );
-    SX1276SetTxConfig( MODEM_LORA, ctx->Settings.TxPower, 0, 0, ctx->Settings.DataRate, 1,
-                       0, false, true, 0, 0, false, 4000 );
+    const LoRaWANRegionParams_t *region = LoRaWAN_RegionGetParams(ctx->Settings.Region);
+    if (region == NULL || region->ChannelCount == 0)
+    {
+        return LORAWAN_STATUS_ERROR;
+    }
 
-    SX1276Send( frame, frameLen );
+    uint8_t attempt = (uint8_t)ctx->Session->DevNonceCounter;
+    uint32_t joinFrequency = LoRaWAN_RegionGetJoinFrequency(ctx->Settings.Region, attempt);
+    if (joinFrequency == 0)
+    {
+        return LORAWAN_STATUS_ERROR;
+    }
+
+    uint32_t bandwidth = 0;
+    uint8_t spreadingFactor = 0;
+    if (!LoRaWAN_GetPhyParams(ctx->Settings.DataRate, &bandwidth, &spreadingFactor))
+    {
+        return LORAWAN_STATUS_INVALID_PARAM;
+    }
+
+    LoRaWAN_ResetRxTracking();
+
+    g_CurrentOp = LORAWAN_OP_JOIN;
+    g_LastTxChannel = attempt % region->ChannelCount;
+    g_LastTxFrequency = joinFrequency;
+    g_LastTxDatarate = ctx->Settings.DataRate;
+
+    Radio.SetModem(MODEM_LORA);
+    Radio.SetChannel(joinFrequency);
+    Radio.SetTxConfig(MODEM_LORA,
+                      LoRaWAN_ComputeTxPowerDbm(ctx->Settings.TxPower, region),
+                      0, bandwidth, spreadingFactor,
+                      1, 8, false, true, 0, false, false, 4000);
+    Radio.Send(frame, frameLen);
+
     return LORAWAN_STATUS_SUCCESS;
 }
 
@@ -67,11 +155,40 @@ LoRaWANStatus_t LoRaWAN_Send(LoRaWANContext_t *ctx, const uint8_t *buffer, uint8
         return status;
     }
 
+    const LoRaWANRegionParams_t *region = LoRaWAN_RegionGetParams(ctx->Settings.Region);
+    if (region == NULL)
+    {
+        return LORAWAN_STATUS_ERROR;
+    }
+
     uint8_t channel = LoRaWAN_RegionGetNextChannel(ctx->Settings.Region, NULL);
-    SX1276SetChannel( LoRaWAN_RegionGetUplinkFrequency(ctx->Settings.Region, channel) );
-    SX1276SetTxConfig( MODEM_LORA, ctx->Settings.TxPower, 0, 0, ctx->Settings.DataRate, 1,
-                       0, false, true, 0, 0, false, 3000 );
-    SX1276Send( frame, frameLen );
+    uint32_t uplinkFrequency = LoRaWAN_RegionGetUplinkFrequency(ctx->Settings.Region, channel);
+    if (uplinkFrequency == 0)
+    {
+        return LORAWAN_STATUS_ERROR;
+    }
+
+    uint32_t bandwidth = 0;
+    uint8_t spreadingFactor = 0;
+    if (!LoRaWAN_GetPhyParams(ctx->Settings.DataRate, &bandwidth, &spreadingFactor))
+    {
+        return LORAWAN_STATUS_INVALID_PARAM;
+    }
+
+    LoRaWAN_ResetRxTracking();
+
+    g_CurrentOp = LORAWAN_OP_TX;
+    g_LastTxChannel = channel;
+    g_LastTxFrequency = uplinkFrequency;
+    g_LastTxDatarate = ctx->Settings.DataRate;
+
+    Radio.SetModem(MODEM_LORA);
+    Radio.SetChannel(uplinkFrequency);
+    Radio.SetTxConfig(MODEM_LORA,
+                      LoRaWAN_ComputeTxPowerDbm(ctx->Settings.TxPower, region),
+                      0, bandwidth, spreadingFactor,
+                      1, 8, false, true, 0, false, false, 3000);
+    Radio.Send(frame, frameLen);
 
     ctx->Session->FCntUp++;
     Storage_UpdateFrameCounters(ctx->Session->FCntUp, ctx->Session->FCntDown);
@@ -82,6 +199,7 @@ LoRaWANStatus_t LoRaWAN_Send(LoRaWANContext_t *ctx, const uint8_t *buffer, uint8
 void LoRaWAN_Process(LoRaWANContext_t *ctx)
 {
     (void)ctx;
+    TimerProcess();
 }
 
 void LoRaWAN_RunRxWindow(LoRaWANContext_t *ctx, uint8_t window)
@@ -93,6 +211,321 @@ void LoRaWAN_RunRxWindow(LoRaWANContext_t *ctx, uint8_t window)
 void LoRaWAN_HandleRadioEvent(LoRaWANContext_t *ctx)
 {
     (void)ctx;
+}
+
+static bool LoRaWAN_GetPhyParams(uint8_t dr, uint32_t *bandwidth, uint8_t *spreadingFactor)
+{
+    if (bandwidth == NULL || spreadingFactor == NULL)
+    {
+        return false;
+    }
+
+    switch (dr)
+    {
+        case 0:
+            *bandwidth = 0;
+            *spreadingFactor = 10;
+            return true;
+        case 1:
+            *bandwidth = 0;
+            *spreadingFactor = 9;
+            return true;
+        case 2:
+            *bandwidth = 0;
+            *spreadingFactor = 8;
+            return true;
+        case 3:
+            *bandwidth = 0;
+            *spreadingFactor = 7;
+            return true;
+        case 4:
+            *bandwidth = 2;
+            *spreadingFactor = 8;
+            return true;
+        case 5:
+            *bandwidth = 2;
+            *spreadingFactor = 7;
+            return true;
+        case 8:
+            *bandwidth = 2;
+            *spreadingFactor = 12;
+            return true;
+        case 9:
+            *bandwidth = 2;
+            *spreadingFactor = 11;
+            return true;
+        case 10:
+            *bandwidth = 2;
+            *spreadingFactor = 10;
+            return true;
+        case 11:
+            *bandwidth = 2;
+            *spreadingFactor = 9;
+            return true;
+        case 12:
+            *bandwidth = 2;
+            *spreadingFactor = 8;
+            return true;
+        case 13:
+            *bandwidth = 2;
+            *spreadingFactor = 7;
+            return true;
+        default:
+            return false;
+    }
+}
+
+static int8_t LoRaWAN_ComputeTxPowerDbm(uint8_t txPowerIndex, const LoRaWANRegionParams_t *region)
+{
+    int8_t maxEirp = (region != NULL) ? (int8_t)region->MaxEirp : 20;
+    int8_t power = maxEirp - (int8_t)(txPowerIndex * 2);
+
+    if (power < -4)
+    {
+        power = -4;
+    }
+
+    return power;
+}
+
+static void LoRaWAN_ResetRxTracking(void)
+{
+    TimerStop(&g_Rx1Timer);
+    TimerStop(&g_Rx2Timer);
+    g_Rx1Pending = false;
+    g_Rx2Pending = false;
+    g_ActiveRxWindow = 0;
+}
+
+static void LoRaWAN_ScheduleRxWindows(LoRaWANContext_t *ctx)
+{
+    if (ctx == NULL)
+    {
+        return;
+    }
+
+    uint32_t rx1Delay = (g_CurrentOp == LORAWAN_OP_JOIN) ? ctx->Settings.JoinRx1DelayMs : ctx->Settings.Rx1DelayMs;
+    uint32_t rx2Delay = (g_CurrentOp == LORAWAN_OP_JOIN) ? ctx->Settings.JoinRx2DelayMs : ctx->Settings.Rx2DelayMs;
+
+    if (rx1Delay == 0U)
+    {
+        rx1Delay = 1U;
+    }
+    if (rx2Delay == 0U)
+    {
+        rx2Delay = 1U;
+    }
+
+    if (rx1Delay > 0U)
+    {
+        TimerSetValue(&g_Rx1Timer, rx1Delay);
+        TimerStart(&g_Rx1Timer);
+        g_Rx1Pending = true;
+    }
+
+    if (rx2Delay > 0U)
+    {
+        TimerSetValue(&g_Rx2Timer, rx2Delay);
+        TimerStart(&g_Rx2Timer);
+        g_Rx2Pending = true;
+    }
+}
+
+static void LoRaWAN_OpenRxWindow(uint8_t window)
+{
+    if (g_ActiveCtx == NULL)
+    {
+        return;
+    }
+
+    uint32_t frequency = 0;
+    uint8_t datarate = 0;
+
+    if (window == 1)
+    {
+        frequency = g_LastTxFrequency;
+        datarate = g_LastTxDatarate;
+    }
+    else
+    {
+        frequency = g_ActiveCtx->Settings.Rx2Frequency;
+        datarate = g_ActiveCtx->Settings.Rx2DataRate;
+    }
+
+    uint32_t bandwidth = 0;
+    uint8_t spreadingFactor = 0;
+    if (frequency == 0 || !LoRaWAN_GetPhyParams(datarate, &bandwidth, &spreadingFactor))
+    {
+        if (window == 1)
+        {
+            g_ActiveRxWindow = 0;
+            return;
+        }
+
+        LoRaWAN_HandleRxWindowComplete();
+        return;
+    }
+
+    Radio.SetModem(MODEM_LORA);
+    Radio.SetChannel(frequency);
+    Radio.SetRxConfig(MODEM_LORA, bandwidth, spreadingFactor, 1, 0, 8, 8, false, 0, true, 0, false, false, false);
+
+    g_ActiveRxWindow = window;
+    Radio.Rx(1000);
+}
+
+static void OnRx1TimerEvent(void *context)
+{
+    (void)context;
+    g_Rx1Pending = false;
+    LoRaWAN_OpenRxWindow(1);
+}
+
+static void OnRx2TimerEvent(void *context)
+{
+    (void)context;
+    g_Rx2Pending = false;
+    LoRaWAN_OpenRxWindow(2);
+}
+
+static void OnRadioTxDone(void)
+{
+    Radio.Standby();
+
+    if (g_ActiveCtx == NULL)
+    {
+        return;
+    }
+
+    if (g_CurrentOp == LORAWAN_OP_NONE)
+    {
+        if (g_ActiveCtx->Callbacks.OnTxComplete != NULL)
+        {
+            g_ActiveCtx->Callbacks.OnTxComplete(LORAWAN_STATUS_SUCCESS);
+        }
+        return;
+    }
+
+    LoRaWAN_ScheduleRxWindows(g_ActiveCtx);
+}
+
+static void OnRadioTxTimeout(void)
+{
+    Radio.Standby();
+    LoRaWAN_ResetRxTracking();
+
+    if (g_CurrentOp == LORAWAN_OP_JOIN)
+    {
+        LoRaWAN_HandleJoinFailure();
+        return;
+    }
+
+    if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnTxComplete != NULL)
+    {
+        g_ActiveCtx->Callbacks.OnTxComplete(LORAWAN_STATUS_SEND_FAILED);
+    }
+    g_CurrentOp = LORAWAN_OP_NONE;
+}
+
+static LoRaWANStatus_t LoRaWAN_HandleJoinAccept(LoRaWANContext_t *ctx, const uint8_t *buffer, uint8_t size)
+{
+    if (ctx == NULL)
+    {
+        return LORAWAN_STATUS_ERROR;
+    }
+
+    return LoRaWAN_ParseJoinAccept(ctx, buffer, size);
+}
+
+static void LoRaWAN_HandleJoinFailure(void)
+{
+    if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnJoinFailure != NULL)
+    {
+        g_ActiveCtx->Callbacks.OnJoinFailure();
+    }
+
+    if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnTxComplete != NULL)
+    {
+        g_ActiveCtx->Callbacks.OnTxComplete(LORAWAN_STATUS_SEND_FAILED);
+    }
+
+    g_CurrentOp = LORAWAN_OP_NONE;
+}
+
+static void OnRadioRxDone(uint8_t *payload, uint16_t size, int16_t rssi, int8_t snr)
+{
+    Radio.Standby();
+    LoRaWAN_ResetRxTracking();
+
+    if (g_CurrentOp == LORAWAN_OP_JOIN)
+    {
+        if (LoRaWAN_HandleJoinAccept(g_ActiveCtx, payload, (uint8_t)size) == LORAWAN_STATUS_SUCCESS)
+        {
+            g_CurrentOp = LORAWAN_OP_NONE;
+
+            if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnTxComplete != NULL)
+            {
+                g_ActiveCtx->Callbacks.OnTxComplete(LORAWAN_STATUS_SUCCESS);
+            }
+        }
+        else
+        {
+            LoRaWAN_HandleJoinFailure();
+        }
+        return;
+    }
+
+    g_CurrentOp = LORAWAN_OP_NONE;
+
+    if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnTxComplete != NULL)
+    {
+        g_ActiveCtx->Callbacks.OnTxComplete(LORAWAN_STATUS_SUCCESS);
+    }
+
+    if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnRxData != NULL)
+    {
+        g_ActiveCtx->Callbacks.OnRxData(payload, (uint8_t)size, 0, rssi, snr);
+    }
+}
+
+static void LoRaWAN_HandleRxWindowComplete(void)
+{
+    LoRaWAN_ResetRxTracking();
+
+    if (g_CurrentOp == LORAWAN_OP_JOIN)
+    {
+        LoRaWAN_HandleJoinFailure();
+        return;
+    }
+
+    if (g_ActiveCtx != NULL && g_ActiveCtx->Callbacks.OnTxComplete != NULL)
+    {
+        g_ActiveCtx->Callbacks.OnTxComplete(LORAWAN_STATUS_SUCCESS);
+    }
+
+    g_CurrentOp = LORAWAN_OP_NONE;
+}
+
+static void OnRadioRxTimeout(void)
+{
+    Radio.Standby();
+    uint8_t window = g_ActiveRxWindow;
+    g_ActiveRxWindow = 0;
+
+    if (window == 1)
+    {
+        if (TimerIsStarted(&g_Rx2Timer) || g_Rx2Pending)
+        {
+            return;
+        }
+    }
+
+    LoRaWAN_HandleRxWindowComplete();
+}
+
+static void OnRadioRxError(void)
+{
+    OnRadioRxTimeout();
 }
 
 static LoRaWANStatus_t LoRaWAN_BuildJoinRequest(LoRaWANContext_t *ctx, uint8_t *buffer, uint8_t *size)

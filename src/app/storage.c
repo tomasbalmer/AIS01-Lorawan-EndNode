@@ -53,11 +53,10 @@ bool Storage_Init(void)
         return true;
     }
 
-    /* Initialize flash interface */
-    /* Load existing data or initialize with defaults */
-    if (!Storage_Load(&g_StorageCache))
+    bool storageLoaded = Storage_Load(&g_StorageCache);
+
+    if (!storageLoaded)
     {
-        /* Initialize with default values */
         memset(&g_StorageCache, 0, sizeof(StorageData_t));
 
         /* Set default LoRaWAN parameters */
@@ -81,12 +80,19 @@ bool Storage_Init(void)
         g_StorageCache.DisableFrameCounterCheck = 0;  /* Default: frame counter check enabled */
         g_StorageCache.RetryCount = LORAWAN_DEFAULT_RETRY_COUNT;
         g_StorageCache.RetryDelay = LORAWAN_DEFAULT_RETRY_DELAY;
-
-        /* Calculate and store CRC */
-        g_StorageCache.Crc = Storage_CalculateCrc(&g_StorageCache);
     }
 
     g_StorageInitialized = true;
+
+    if (!storageLoaded)
+    {
+        if (!Storage_Save(&g_StorageCache))
+        {
+            g_StorageInitialized = false;
+            return false;
+        }
+    }
+
     return true;
 }
 

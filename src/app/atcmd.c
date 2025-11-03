@@ -641,7 +641,7 @@ static ATCmdResult_t ATCmd_HandleTDC(int argc, char *argv[])
     if (argc == 1)
     {
         /* GET */
-        ATCmd_SendResponse("AT+TDC=%u\r\n", storage.TxDutyCycle);
+        ATCmd_SendFormattedResponse("AT+TDC=%u\r\n", storage.TxDutyCycle);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -879,7 +879,7 @@ static ATCmdResult_t ATCmd_HandleNetworkJoinMode(int argc, char *argv[])
     if (argc == 1)
     {
         /* GET */
-        ATCmd_SendResponse("AT+NJM=%d\r\n", storageData.JoinMode);
+        ATCmd_SendFormattedResponse("AT+NJM=%d\r\n", storageData.JoinMode);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -911,7 +911,7 @@ static ATCmdResult_t ATCmd_HandleNwkSKey(int argc, char *argv[])
         /* GET */
         char hexStr[33];
         ATCmd_BytesToHexString(storageData.NwkSKey, 16, hexStr);
-        ATCmd_SendResponse("AT+NWKSKEY=%s\r\n", hexStr);
+        ATCmd_SendFormattedResponse("AT+NWKSKEY=%s\r\n", hexStr);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -941,7 +941,7 @@ static ATCmdResult_t ATCmd_HandleAppSKey(int argc, char *argv[])
         /* GET */
         char hexStr[33];
         ATCmd_BytesToHexString(storageData.AppSKey, 16, hexStr);
-        ATCmd_SendResponse("AT+APPSKEY=%s\r\n", hexStr);
+        ATCmd_SendFormattedResponse("AT+APPSKEY=%s\r\n", hexStr);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -969,7 +969,7 @@ static ATCmdResult_t ATCmd_HandleDevAddr(int argc, char *argv[])
     if (argc == 1)
     {
         /* GET */
-        ATCmd_SendResponse("AT+DADDR=%08X\r\n", storageData.DevAddr);
+        ATCmd_SendFormattedResponse("AT+DADDR=%08X\r\n", storageData.DevAddr);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -1002,7 +1002,7 @@ static ATCmdResult_t ATCmd_HandleDisableFrameCounterCheck(int argc, char *argv[]
     if (argc == 1)
     {
         /* GET */
-        ATCmd_SendResponse("AT+DISFCNTCHECK=%d\r\n", storageData.DisableFrameCounterCheck);
+        ATCmd_SendFormattedResponse("AT+DISFCNTCHECK=%d\r\n", storageData.DisableFrameCounterCheck);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -1035,7 +1035,7 @@ static ATCmdResult_t ATCmd_HandleNetworkJoinStatus(int argc, char *argv[])
 
     /* Query LoRaWAN stack for join status */
     bool isJoined = LoRaWANApp_IsJoined();
-    ATCmd_SendResponse("AT+NJS=%d\r\n", isJoined ? 1 : 0);
+    ATCmd_SendFormattedResponse("AT+NJS=%d\r\n", isJoined ? 1 : 0);
     return ATCMD_OK;
 }
 

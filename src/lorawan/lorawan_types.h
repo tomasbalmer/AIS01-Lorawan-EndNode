@@ -75,6 +75,10 @@ typedef struct
     LoRaWANMsgType_t MsgType;
     uint8_t AppPort;
     uint32_t TxDutyCycleMs;
+    uint32_t Rx1DelayMs;
+    uint32_t Rx2DelayMs;
+    uint32_t JoinRx1DelayMs;
+    uint32_t JoinRx2DelayMs;
 } LoRaWANSettings_t;
 
 typedef struct

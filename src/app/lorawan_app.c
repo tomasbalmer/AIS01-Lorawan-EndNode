@@ -52,6 +52,10 @@ static void LoRaWANApp_LoadSettings(const StorageData_t *storage)
     g_Settings.MsgType = storage->ConfirmedMsg ? LORAWAN_MSG_CONFIRMED : LORAWAN_MSG_UNCONFIRMED;
     g_Settings.AppPort = storage->AppPort;
     g_Settings.TxDutyCycleMs = storage->TxDutyCycle;
+    g_Settings.Rx1DelayMs = storage->Rx1Delay;
+    g_Settings.Rx2DelayMs = storage->Rx2Delay;
+    g_Settings.JoinRx1DelayMs = storage->JoinRx1Delay;
+    g_Settings.JoinRx2DelayMs = storage->JoinRx2Delay;
 }
 
 bool LoRaWANApp_Init(void)
