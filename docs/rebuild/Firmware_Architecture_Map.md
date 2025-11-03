@@ -9,6 +9,20 @@
 | Data Tables & Strings | `0x08014500–0x080183FF` | AT command names/help (`0x08016A06`), user messages (`0x08017300+`) | `docs/AIS01_bin_analysis/AIS01_strings.csv` |
 | EEPROM Shadow | `0x08080800–0x08080FFF` | Config block consumed by storage routines | `docs/AIS01_bin_analysis/AIS01_nvm_map.txt` |
 
+**Binary coverage reminder:** current dump spans `0x08000000–0x0801502F`. Any reference to `0x0801xxxx` (for example `0x0801FDBC`) belongs to external code not present in this image; document such jumps as _external dependency_.
+
+## Boot Initialisation Insights
+- `Reset_Handler` at `0x0800F30C` sets boot flags in SRAM (`0x20000118`), mirrors `device_state_t` from `0x20006CC0` to `0x20006D0C`, clears the `ram_config_t` block at `0x20005140`, and zeroes scheduler list nodes via `*(node + 0x24) = 0`.
+- Scheduler setup then flows through `FUN_0800F5BC` (timer guard) and `FUN_0800F4F4` (runtime snapshot) before touching `FUN_0800F454`, which is a thunk into code outside the dump.
+- Additional helpers nearby:
+  - `check_duty_or_join_gate` (`0x0800F308`) resets duty/join counters before transmissions.
+  - `compute_transmit_offset_or_join_window` (`0x0800F380`) returns `0/1` to gate TX/join attempts.
+  - `scheduler_loop` (`0x0800FD2C`) is the main scheduler; it exits early on init, queries join gate, orchestrates TX/RX preparation, and schedules STOP-mode delays via `compute_next_idle_delay` (`~0x0800FCA*`).
+
+## RAM Structures (from Ghidra snapshot)
+- **`ram_config_t` @ `0x20005140`:** status byte at `0x00`, list head pointer at `0x1C`, scheduler state flags at `0x28/0x2D`, wake timers at `0xA8/0xAC`, plus helper bytes (`0x63`, `0xB0`) referenced by timer routines.
+- **`device_state_t` @ `0x20006CC0`:** boot flags at base, fields `0x24` and `0x2D` synced into `ram_config`, embedded sub-struct at `0x4C`, runtime counters at `0x70/0x74/0x78`, and mirrored copy at `0x20006D0C`.
+
 ## Execution Flow Overview
 ```
 Reset @0x0800F30D → SystemInit (clock/setup)
@@ -22,6 +36,7 @@ Enter Main Loop (state machine around 0x0800F28C)
     ├─ Periodic Uplink (0x08005238) ← sensor read (0x0800703C) & timing from RTC (0x08007024)
     ├─ Downlink Handling (0x08005244) ← dispatch to config/power/calibration routines
     └─ Sleep Cycle (0x08007018) ← scheduled by window scheduler (0x0800525C)
+            ↳ Preceded at boot by Reset_Handler → FUN_0800F5BC → FUN_0800F4F4 → FUN_0800F454 (external)
 ```
 
 ## Command & Configuration Topology
@@ -49,6 +64,6 @@ Downlink (opcodes 0x01,0x21,0xA0) → Dispatcher (0x08005244) →
 1. **Preserve address-driven behaviour:** Many helpers (e.g., `write key error` handlers at `0x08006480`) correspond to validation flows that we should imitate functionally even if addresses change in the custom firmware.
 2. **Reproduce textual outputs:** Strings in `AIS01_strings.csv` map 1:1 to handler outcomes. Keeping these messages intact ensures compatibility with Dragino tools and automated scripts.
 3. **Align AT and downlink paths:** The OEM firmware intentionally funnels both paths through shared validators. In the rewrite, mirror this structure to avoid state divergence between field configuration (UART) and remote management (downlinks).
-4. **Power discipline:** The STOP-mode path hinges on a clean handshake between the scheduler (`0x0800525C`) and hardware manager (`0x08007018`). Any custom logic should respect this sequence to hit the sub-20 µA target.
+4. **Power discipline:** The STOP-mode path hinges on a clean handshake between the scheduler (`0x0800525C`) and hardware manager (`0x08007018`). Any custom logic should respect this sequence to hit the sub-20 µA target.
 5. **Calibration workflow:** Remote calibration sits at the intersection of downlinks (`opcode 0xA0`) and AT commands. The calibration engine marks “pending apply” state until next reboot or explicit `ATZ`; replicate this to match the original behaviour hinted at `docs/AIS01_bin_analysis/AIS01_overview.md`.
-
+6. **External dependencies outstanding:** Calls resolving through `FUN_0800F454` and opcode-table jumps to `0x080205EA` require the additional image covering `0x0801xxxx`; plan acquisition or stubbing before final integration.

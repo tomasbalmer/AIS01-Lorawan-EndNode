@@ -4,6 +4,11 @@
 
 El firmware está diseñado como una máquina de estados modular para un nodo LoRaWAN Clase A con ultra-bajo consumo.
 
+## Notas de binario / alcance de reverse engineering
+- El volcado analizado cubre `0x08000000` hasta `0x0801502F`.
+- Cualquier referencia a `0x0801xxxx` (p.ej. `0x0801FDBC`) está fuera de la imagen disponible y corresponde a código externo (bootloader o librerías precompiladas).
+- Documentar dichas llamadas como **dependencias externas** hasta contar con el binario restante.
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     APLICACIÓN                               │
@@ -119,6 +124,14 @@ typedef struct {
 - Escritura byte a byte mediante acceso directo a `DATA_EEPROM`
 - Lectura directa desde memoria mapeada
 - Persistencia de claves/session counters y configuración AT
+
+**Estructuras RAM clave (Ghidra)**:
+- `ram_config_t` en `0x20005140`: flags de estado (`0x00`), cabecera de lista (`0x1C`), banderas de scheduler (`0x28`, `0x2D`) y temporizadores de wake-up (`0xA8`, `0xAC`).
+- `device_state_t` en `0x20006CC0`: flags de arranque, campos `0x24/0x2D` sincronizados hacia `ram_config`, sub-bloque anidado en `0x4C` y contadores `0x70/0x74/0x78`. Copia runtime en `0x20006D0C`.
+
+**Secuencia Reset_Handler**:
+- `Reset_Handler` (`0x0800F30C`) inicializa flags en `0x20000118`, clona `device_state_t` a su versión runtime, borra `ram_config_t` y limpia listas del scheduler (`*(nodo + 0x24) = 0`).
+- Tras la inicialización se ejecutan `FUN_0800F5BC` (protege/arma timers) y `FUN_0800F4F4` (sincroniza estado) antes de delegar en `FUN_0800F454`, que brinca a una dirección externa (`0x0801FDBC`).
 
 ### 5. calibration.c - Remote Calibration
 
