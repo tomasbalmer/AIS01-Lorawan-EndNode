@@ -7,6 +7,7 @@
 | AT Command Layer | `0x08006000–0x080064A4` | `FUN_00002000` (Parser), `FUN_00002030` (`AT+JOIN`), `FUN_0000203C` (`AT+TDC`), … `FUN_00002474` (Region helpers) | `docs/rebuild/AT_Handlers.md` |
 | Hardware & Power | `0x08007000–0x0800742C` | `FUN_00003000` (Init), `FUN_00003018` (STOP mode), `FUN_00003030` (Storage), `FUN_00003060` (Calibration) | `docs/rebuild/Hardware_Power.md` |
 | Data Tables & Strings | `0x08014500–0x080183FF` | AT command names/help (`0x08016A06`), user messages (`0x08017300+`) | `docs/AIS01_bin_analysis/AIS01_strings.csv` |
+| Downlink Opcode Table | `0x08014ABC` (+) | Handler pointers for opcodes (`0x01…0x24`); dispatcher @ `0x080123E0` | `docs/rebuild/Downlink_Dispatcher.md` |
 | EEPROM Shadow | `0x08080800–0x08080FFF` | Config block consumed by storage routines | `docs/AIS01_bin_analysis/AIS01_nvm_map.txt` |
 
 **Binary coverage reminder:** current dump spans `0x08000000–0x0801502F`. Any reference to `0x0801xxxx` (for example `0x0801FDBC`) belongs to external code not present in this image; document such jumps as _external dependency_.
