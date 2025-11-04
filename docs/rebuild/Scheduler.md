@@ -29,28 +29,52 @@
   - Used as gate before TX/join attempts
 
 ## Scheduler Loop (`0x0800FD2C`)
-- Steps (current understanding):
-  1. If `g_ctx[0x12] == -1`, exit early (return `9`)
-  2. Check join/duty gate via `compute_transmit_offset_or_join_window`
-     - If blocked, return `8`
-  3. Manage TX/RX: call payload builders and MAC send routines
-  4. Idle path:
-     - `compute_next_idle_delay(g_ctx[0x20])`
-     - `timer_set_next_wakeup` + `timer_start`
-  5. Low power integration with `Power` module (STOP mode)
+```
+bool scheduler_loop(void)
+{
+    if (g_ctx->boot_state == -1)
+    {
+        return false;                 // nothing scheduled yet
+    }
 
-## Outstanding Questions / TODO
-- Precise pseudocode & variable naming for `scheduler_loop`
-- Detailed layout of `g_ctx` struct (beyond known offsets)
-- Behaviour of external jump via `FUN_0800F454`
-- Interactions with LoRaMAC (MAC command scheduling, retry logic)
-- Confirmation of timer units (ms vs ticks) in `0xA8/0xAC`
+    if (compute_transmit_offset_or_join_window() == false)
+    {
+        return false;                 // honour duty/join gate
+    }
 
-## Next Data Needed
-- Full disassembly notes or pseudocode for `scheduler_loop`
-- Mapping of opcodes at `0x08014A00` and their impact on scheduler state
-- Calibration module effects on scheduler timers
-- Storage persistence triggers related to duty-cycle counters
+    if (g_ctx->next_op == OP_TX)
+    {
+        prepare_frame();              // builds MAC frame buffers
+        lorawan_send();                // hands off to radio layer
+        g_ctx->next_op = OP_IDLE;
+    }
+    else if (g_ctx->next_op == OP_RX)
+    {
+        update_rx_state();            // handled asynchronously
+        g_ctx->next_op = OP_IDLE;
+    }
+
+    uint32_t delay = compute_next_idle_delay(g_ctx->scheduler_slot);
+    if (delay > 0)
+    {
+        timer_set_next_wakeup(delay);
+        timer_start();
+    }
+
+    return true;
+}
+```
+
+## Notes
+- `g_ctx->boot_state` (offset `0x12`) is initialised to `-1` until the first
+  scheduler task is registered.
+- `g_ctx->next_op` lives near offset `0x28` and is fed by both AT handlers and
+  downlink opcodes that queue transmissions.
+- `g_ctx->scheduler_slot` references timer descriptors stored around
+  `0x200051E0`; actual hardware timers are configured by `FUN_0800F5BC`.
+- External thunk `FUN_0800F454` (jumping to `0x0801FDBC`) remains unresolved
+  in this dump; the rewritten firmware should provide an equivalent callback or
+  stub for future integration.
 
 
 

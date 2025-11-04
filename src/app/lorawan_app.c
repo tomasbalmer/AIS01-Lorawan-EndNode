@@ -5,10 +5,11 @@
 #include "storage.h"
 #include "calibration.h"
 #include "atcmd.h"
+#include <stdio.h>
 
 #define DOWNLINK_MIN_SIZE 1
 
-static LoRaWANStatus_t g_AppStatus = LORAWAN_STATUS_IDLE;
+static LoRaWANAppState_t g_AppStatus = LORAWAN_APP_STATE_IDLE;
 static LoRaWANContext_t g_LoRaCtx;
 static LoRaWANSession_t g_Session;
 static LoRaWANSettings_t g_Settings;
@@ -88,7 +89,7 @@ bool LoRaWANApp_Init(void)
         if (g_Session.DevAddr != 0)
         {
             g_Session.Joined = true;
-            DEBUG_PRINT("ABP mode activated, DevAddr=0x%08X\r\n", g_Session.DevAddr);
+            DEBUG_PRINT("ABP mode activated, DevAddr=0x%08lX\r\n", (unsigned long)g_Session.DevAddr);
         }
         else
         {
@@ -113,13 +114,13 @@ bool LoRaWANApp_Init(void)
         return false;
     }
 
-    g_AppStatus = g_Session.Joined ? LORAWAN_STATUS_JOINED : LORAWAN_STATUS_IDLE;
+    g_AppStatus = g_Session.Joined ? LORAWAN_APP_STATE_JOINED : LORAWAN_APP_STATE_IDLE;
     return true;
 }
 
 bool LoRaWANApp_Join(void)
 {
-    g_AppStatus = LORAWAN_STATUS_JOINING;
+    g_AppStatus = LORAWAN_APP_STATE_JOINING;
     return (LoRaWAN_RequestJoin(&g_LoRaCtx) == LORAWAN_STATUS_SUCCESS);
 }
 
@@ -129,7 +130,7 @@ bool LoRaWANApp_SendUplink(uint8_t *buffer, uint8_t size, uint8_t port, bool con
     LoRaWANStatus_t status = LoRaWAN_Send(&g_LoRaCtx, buffer, size, port, type);
     if (status == LORAWAN_STATUS_SUCCESS)
     {
-        g_AppStatus = LORAWAN_STATUS_SENDING;
+        g_AppStatus = LORAWAN_APP_STATE_SENDING;
         return true;
     }
     return false;
@@ -140,7 +141,7 @@ void LoRaWANApp_Process(void)
     LoRaWAN_Process(&g_LoRaCtx);
 }
 
-LoRaWANStatus_t LoRaWANApp_GetStatus(void)
+LoRaWANAppState_t LoRaWANApp_GetStatus(void)
 {
     return g_AppStatus;
 }
@@ -162,17 +163,17 @@ static void OnJoinSuccess(uint32_t devAddr)
     g_Session.FCntUp = 0;
     g_Session.FCntDown = 0;
     Storage_UpdateJoinKeys(devAddr, g_Session.NwkSKey, g_Session.AppSKey);
-    g_AppStatus = LORAWAN_STATUS_JOINED;
+    g_AppStatus = LORAWAN_APP_STATE_JOINED;
 }
 
 static void OnJoinFailure(void)
 {
-    g_AppStatus = LORAWAN_STATUS_JOIN_FAILED;
+    g_AppStatus = LORAWAN_APP_STATE_JOIN_FAILED;
 }
 
 static void OnTxComplete(LoRaWANStatus_t status)
 {
-    g_AppStatus = (status == LORAWAN_STATUS_SUCCESS) ? LORAWAN_STATUS_SEND_SUCCESS : LORAWAN_STATUS_SEND_FAILED;
+    g_AppStatus = (status == LORAWAN_STATUS_SUCCESS) ? LORAWAN_APP_STATE_SEND_SUCCESS : LORAWAN_APP_STATE_SEND_FAILED;
 
     /* Update confirmed message status for AT commands */
     ATCmd_UpdateConfirmedStatus(status == LORAWAN_STATUS_SUCCESS ? 1 : 2);

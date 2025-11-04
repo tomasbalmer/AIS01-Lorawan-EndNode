@@ -11,6 +11,8 @@
 #include "calibration.h"
 #include "lorawan_app.h"
 #include "board.h"
+#include "stm32l072xx.h"
+#include "hal_stubs.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -23,7 +25,7 @@
 #define ATCMD_MAX_ARGS              8
 
 /* Standard AT Responses (match original firmware) */
-#define ATCMD_RESP_OK               "OK\r\n"
+#define ATCMD_RESP_OK               "\r\nOK\r\n"
 #define ATCMD_RESP_ERROR            "AT_ERROR\r\n"
 #define ATCMD_RESP_PARAM_ERROR      "AT_PARAM_ERROR\r\n"
 #define ATCMD_RESP_BUSY_ERROR       "AT_BUSY_ERROR\r\n"

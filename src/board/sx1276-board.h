@@ -15,7 +15,7 @@ extern "C"
 #include <stdbool.h>
 #include "radio.h"
 #include "gpio.h"
-#include "radio/sx1276/sx1276.h"
+#include "sx1276/sx1276.h"
 
     /*!\brief External radio driver instance */
     extern const struct Radio_s Radio;

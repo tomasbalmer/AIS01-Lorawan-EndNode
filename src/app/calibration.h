@@ -92,6 +92,16 @@ bool Calibration_HwWaitReady(void);
  */
 void Calibration_HwSetEnable(bool enable);
 
+/*!
+ * \brief Indicates whether a calibration apply is in progress
+ */
+bool Calibration_IsBusy(void);
+
+/*!
+ * \brief Indicates whether there is any pending apply flag recorded
+ */
+bool Calibration_HasPending(void);
+
 #ifdef __cplusplus
 }
 #endif

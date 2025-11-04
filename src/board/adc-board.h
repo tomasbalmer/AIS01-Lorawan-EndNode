@@ -12,7 +12,7 @@ extern "C" {
 
 #include <stdint.h>
 #include "stm32l0xx.h"
-#include "pinName-board.h"
+#include "system/gpio.h"
 
 /*!
  * ADC object type definition

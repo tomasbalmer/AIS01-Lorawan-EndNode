@@ -11,6 +11,7 @@
 #include <string.h>
 #include "calibration.h"
 #include "config.h"
+#include <stdio.h>
 
 #ifndef DEBUG_PRINT
 #define DEBUG_PRINT(...) do { } while (0)
@@ -148,6 +149,9 @@ static bool Calibration_HandleApply(void)
     }
 
     Calibration_UpdateMirror();
+    g_CalibrationState.Snapshot.PendingSlots[0] = 0U;
+    g_CalibrationState.Snapshot.PendingSlots[1] = 0U;
+    g_CalibrationState.Snapshot.PendingSlots[2] = 0U;
     DEBUG_PRINT("Calibration apply complete (param=%lu, value=%lu)\r\n",
                 (unsigned long)g_CalibrationState.Snapshot.Parameter,
                 (unsigned long)g_CalibrationState.Snapshot.Value);
@@ -253,4 +257,21 @@ bool Calibration_Reset(void)
 
     Calibration_ClearState();
     return true;
+}
+
+bool Calibration_IsBusy(void)
+{
+    return g_CalibrationInitialized && g_CalibrationState.Snapshot.Busy;
+}
+
+bool Calibration_HasPending(void)
+{
+    if (!g_CalibrationInitialized)
+    {
+        return false;
+    }
+
+    const CalibrationData_t *snap = &g_CalibrationState.Snapshot;
+    return ((snap->PendingSlots[0] | snap->PendingSlots[1] |
+             snap->PendingSlots[2] | (uint8_t)(snap->ApplyFlag & 0xFFU)) != 0U);
 }

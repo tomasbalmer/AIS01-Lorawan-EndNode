@@ -2,7 +2,6 @@
 #define GPIO_BOARD_H
 
 #include <stdint.h>
-#include "pinName-board.h"
 #include "system/gpio.h"
 
 /* GPIO Alternate Function definitions for STM32L072 */

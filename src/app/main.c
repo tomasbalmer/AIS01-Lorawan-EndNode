@@ -171,9 +171,9 @@ int main(void)
             case APP_STATE_JOIN:
             {
                 /* Wait for join to complete */
-                LoRaWANStatus_t status = LoRaWANApp_GetStatus();
+            LoRaWANAppState_t status = LoRaWANApp_GetStatus();
 
-                if (status == LORAWAN_STATUS_JOINED)
+                if (status == LORAWAN_APP_STATE_JOINED)
                 {
                     DEBUG_PRINT("Network joined successfully\r\n");
                     g_AppState = APP_STATE_IDLE;
@@ -181,7 +181,7 @@ int main(void)
                     /* Start periodic uplink timer */
                     TimerStart(&g_TxTimer);
                 }
-                else if (status == LORAWAN_STATUS_JOIN_FAILED)
+                else if (status == LORAWAN_APP_STATE_JOIN_FAILED)
                 {
                     /* Join will retry automatically */
                     DEBUG_PRINT("Join failed, retrying...\r\n");
@@ -249,6 +249,13 @@ int main(void)
             case APP_STATE_SLEEP:
             {
 #if LOW_POWER_MODE_ENABLED
+                if (Calibration_IsBusy() || Calibration_HasPending())
+                {
+                    DEBUG_PRINT("Calibration active, skipping STOP mode\r\n");
+                    g_AppState = APP_STATE_IDLE;
+                    break;
+                }
+
                 /* Calculate time until next event */
                 uint32_t sleepTime = g_Config.TxDutyCycle;
 

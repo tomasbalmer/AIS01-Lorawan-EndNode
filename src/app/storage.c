@@ -558,7 +558,10 @@ bool Storage_FactoryReset(void)
         return false;
     }
 
-    bool result = Storage_FlashErase(EEPROM_BASE_ADDRESS, EEPROM_SIZE);
+    if (!Storage_FlashErase(EEPROM_BASE_ADDRESS, EEPROM_SIZE))
+    {
+        return false;
+    }
 
     /* Reinitialize with defaults */
     g_StorageInitialized = false;

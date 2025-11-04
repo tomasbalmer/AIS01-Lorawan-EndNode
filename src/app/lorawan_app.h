@@ -22,14 +22,14 @@ extern "C"
  * ========================================================================== */
 typedef enum
 {
-    LORAWAN_STATUS_IDLE = 0,
-    LORAWAN_STATUS_JOINING,
-    LORAWAN_STATUS_JOINED,
-    LORAWAN_STATUS_JOIN_FAILED,
-    LORAWAN_STATUS_SENDING,
-    LORAWAN_STATUS_SEND_SUCCESS,
-    LORAWAN_STATUS_SEND_FAILED,
-} LoRaWANStatus_t;
+    LORAWAN_APP_STATE_IDLE = 0,
+    LORAWAN_APP_STATE_JOINING,
+    LORAWAN_APP_STATE_JOINED,
+    LORAWAN_APP_STATE_JOIN_FAILED,
+    LORAWAN_APP_STATE_SENDING,
+    LORAWAN_APP_STATE_SEND_SUCCESS,
+    LORAWAN_APP_STATE_SEND_FAILED,
+} LoRaWANAppState_t;
 
 /* ============================================================================
  * PUBLIC FUNCTION PROTOTYPES
@@ -66,7 +66,7 @@ void LoRaWANApp_Process(void);
  * \brief Gets current LoRaWAN status
  * \retval Current status
  */
-LoRaWANStatus_t LoRaWANApp_GetStatus(void);
+LoRaWANAppState_t LoRaWANApp_GetStatus(void);
 
 /*!
  * \brief Checks if device is joined to network
