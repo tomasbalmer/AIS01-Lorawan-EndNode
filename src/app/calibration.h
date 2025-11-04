@@ -22,23 +22,24 @@ extern "C"
  * ========================================================================== */
 typedef enum
 {
-    CALIB_CMD_RESET = 0x01,           /* Reset calibration to defaults */
-    CALIB_CMD_SET_OFFSET = 0x02,      /* Set sensor offset */
-    CALIB_CMD_SET_GAIN = 0x03,        /* Set sensor gain */
-    CALIB_CMD_SET_THRESHOLD = 0x04,   /* Set detection threshold */
-    CALIB_CMD_QUERY = 0x05,           /* Query current calibration */
-} CalibrationCmd_t;
+    CALIB_OPCODE_QUERY = 0x00U,  /* Read current configuration */
+    CALIB_OPCODE_APPLY = 0x01U    /* Apply configuration payload */
+} CalibrationOpcode_t;
 
 /* ============================================================================
  * CALIBRATION DATA STRUCTURE
  * ========================================================================== */
+#define CALIBRATION_BUFFER_SIZE 32U
+
 typedef struct
 {
-    float Offset;                     /* Sensor offset value */
-    float Gain;                       /* Sensor gain multiplier */
-    float Threshold;                  /* Detection threshold */
-    uint32_t Timestamp;               /* Last calibration timestamp */
-    uint8_t Version;                  /* Calibration version */
+    uint8_t Command;                  /* Last opcode processed */
+    uint8_t Flags;                    /* Raw flag field from payload */
+    uint32_t Parameter;               /* Auxiliary parameter (channel/index) */
+    uint32_t Value;                   /* Configuration value */
+    uint32_t ApplyFlag;               /* Mirror of apply flag */
+    uint8_t PendingSlots[3];          /* Software shadow of pending/apply bitfields */
+    bool Busy;                        /* True while hardware apply in progress */
 } CalibrationData_t;
 
 /* ============================================================================
@@ -68,34 +69,28 @@ bool Calibration_ProcessDownlink(const uint8_t *payload, uint8_t size,
  * \param [in] size Size of payload
  * \retval true if command processed successfully
  */
-bool Calibration_ProcessATCommand(const uint8_t *payload, uint8_t size);
-
 /*!
- * \brief Gets current calibration data
- * \param [out] data Pointer to calibration data structure
- * \retval true if data retrieved successfully
+ * \brief Gets the last processed calibration snapshot
+ * \param [out] data Pointer that receives the snapshot
+ * \retval true if data available
  */
 bool Calibration_GetData(CalibrationData_t *data);
 
 /*!
- * \brief Sets calibration data
- * \param [in] data Pointer to calibration data structure
- * \retval true if data set successfully
- */
-bool Calibration_SetData(const CalibrationData_t *data);
-
-/*!
- * \brief Resets calibration to factory defaults
- * \retval true if reset successful
+ * \brief Clears calibration context to defaults
+ * \retval true when context cleared
  */
 bool Calibration_Reset(void);
 
 /*!
- * \brief Applies calibration to raw sensor value
- * \param [in] rawValue Raw sensor reading
- * \retval Calibrated sensor value
+ * \brief Hardware wait helper (overridden by board layer)
  */
-float Calibration_ApplyToValue(float rawValue);
+bool Calibration_HwWaitReady(void);
+
+/*!
+ * \brief Hardware enable helper (overridden by board layer)
+ */
+void Calibration_HwSetEnable(bool enable);
 
 #ifdef __cplusplus
 }

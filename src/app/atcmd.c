@@ -796,24 +796,53 @@ static ATCmdResult_t ATCmd_HandleDebug(int argc, char *argv[])
 
 static ATCmdResult_t ATCmd_HandleCalibRemote(int argc, char *argv[])
 {
-    if (argc >= 2)
+    if (argc < 2)
     {
-        /* Parse hex payload and send to calibration module */
-        uint8_t payload[32];
-        uint8_t len = (strlen(argv[1]) + 1) / 2;
-
-        if (len > 32) len = 32;
-
-        if (ATCmd_HexStringToBytes(argv[1], payload, len))
-        {
-            if (Calibration_ProcessATCommand(payload, len))
-            {
-                ATCmd_SendResponse("Calibration command processed\r\n");
-                return ATCMD_OK;
-            }
-        }
+        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
+        return ATCMD_INVALID_PARAM;
     }
-    return ATCMD_INVALID_PARAM;
+
+    const char *hexPayload = argv[1];
+    size_t hexLen = strlen(hexPayload);
+
+    if ((hexLen == 0U) || (hexLen % 2U) != 0U)
+    {
+        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
+        return ATCMD_INVALID_PARAM;
+    }
+
+    uint8_t payloadLen = (uint8_t)(hexLen / 2U);
+    if (payloadLen > CALIBRATION_BUFFER_SIZE)
+    {
+        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
+        return ATCMD_INVALID_PARAM;
+    }
+
+    uint8_t payload[CALIBRATION_BUFFER_SIZE];
+    if (!ATCmd_HexStringToBytes(hexPayload, payload, payloadLen))
+    {
+        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
+        return ATCMD_INVALID_PARAM;
+    }
+
+    uint8_t response[CALIBRATION_BUFFER_SIZE];
+    uint8_t responseSize = 0U;
+
+    if (!Calibration_ProcessDownlink(payload, payloadLen, response, &responseSize))
+    {
+        ATCmd_SendResponse(ATCMD_RESP_ERROR);
+        return ATCMD_ERROR;
+    }
+
+    if (responseSize > 0U)
+    {
+        char hexBuffer[(CALIBRATION_BUFFER_SIZE * 2U) + 4U];
+        ATCmd_BytesToHexString(response, responseSize, hexBuffer);
+        ATCmd_SendFormattedResponse("+CALIBREMOTE:%s\r\n", hexBuffer);
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
 }
 
 /* ============================================================================

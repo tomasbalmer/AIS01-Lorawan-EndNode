@@ -238,7 +238,7 @@ static void HandleDownlinkOpcode(const uint8_t *payload, uint8_t size)
 
     case 0xA0: /* Remote calibration */
     {
-        uint8_t response[32];
+        uint8_t response[CALIBRATION_BUFFER_SIZE];
         uint8_t responseSize = 0;
         if (Calibration_ProcessDownlink(payload, size, response, &responseSize))
         {

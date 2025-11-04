@@ -32,12 +32,13 @@
 5. `FUN_0800BC5C(0x8B)` sends uplink / AT response (e.g., `CFG_OK`, `CAL_OK`).
 
 ## Flags & States
-- `pending_apply`: stored in nibbles at `[ctx+0x38]`, `[ctx+0x3C]`, `[ctx+0x40]`.
+- `pending_apply`: stored in nibbles at `[ctx+0x38]`, `[ctx+0x3C]`, `[ctx+0x40]`; values manipulated via bitmasks (no ms conversion).
 - `apply_busy`: `[ctx+0x18] = 1` while hardware commit in progress.
 - Hardware enable: bit `0x20` at `0x40000024` toggled during apply.
 
-## Integrity
-- No CRC polynomial observed; integrity relies on `opcode_validator_memcmp` comparing mirror and active values.
+## Integrity & Persistence
+- Integrity relies on `opcode_validator_memcmp` comparing mirror and active values (no CRC polynomial).
+- No Flash/EEPROM writes observed during calibration apply; configuration exists only in RAM + hardware unless the rewritten firmware adds persistence.
 
 ## Memory / Peripheral References
 - `0x4001F000`, `0x4001FC00`: register blocks updated during apply.
@@ -46,6 +47,10 @@
 - `0x20004B08`: payload buffer (working copy).
 - `0x20004D98`: mirror pointer/component index.
 
+Implementation hook: `src/board/calibration_hw.c` provides the `Calibration_HwWaitReady` /
+`Calibration_HwSetEnable` functions that manipulate these registers with a simple timeout
+and bit toggle sequence.
+
 ## Outstanding Items
-- Opcode table entry pointing to external handler `0x080205EA` (requires additional dump).
+- Opcode table entry pointing to external handler `0x080205EA` (acknowledgement helper residing outside current dump).
 - Confirm text strings used for acknowledgments (`CFG_OK`, `CAL_OK`) for AT parity.
