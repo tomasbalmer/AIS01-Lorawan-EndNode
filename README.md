@@ -1,113 +1,114 @@
 # Dragino AIS01-LB Custom Firmware
 
-Custom firmware for Dragino AIS01-LB node based on STM32L072CZ and SX1276 radio, featuring a compact in-house LoRaWAN Class A OTAA stack for AU915 Sub-band 2.
+Custom firmware for the Dragino AIS01-LB (STM32L072CZ + SX1276) replacing the OEM image while keeping LoRaWAN Class A OTAA compatibility for AU915 Sub-band 2. The codebase is built around Semtech's LoRaMAC-node stack with a new bare-metal board layer, AT command surface, and remote calibration engine.
 
 ## Features
 
 - **LoRaWAN Region**: AU915 (Sub-band 2)
-- **Class**: Class A (OTAA)
-- **MCU**: STM32L072CZ (Cortex-M0+)
-- **Radio**: SX1276
-- **Interface**: UART (AT commands + debug @ 115200 baud)
-- **Low Power**: STOP mode + RTC (<20 µA target)
-- **Remote Calibration**: Via AT commands and LoRaWAN downlinks
-- **Storage**: EEPROM emulation in flash (CRC protected)
+- **Class**: Class A (OTAA), periodic uplinks + confirmed/unconfirmed modes
+- **Remote calibration**: AT command `AT+CALIBREMOTE` and downlink opcode `0xA0`
+- **Low power**: STOP mode + RTC wake-up, SX1276 power gating (<20 µA target)
+- **Storage**: EEPROM emulation with CRC32 validation for credentials and settings
+- **Tooling**: GNU make + `arm-none-eabi-gcc`, outputs at application offset `0x08004000`
 
 ## Quick Start
 
-### 1. Compile
+### 1. Build the firmware
 
 ```bash
 make clean && make -j4
 ```
 
-### 2. Flash
+Artifacts are written to `build/`, notably `build/ais01.bin` (≈50 KB).
+
+### 2. Flash the device
+
+Use the Dragino OTA Tool and select `build/ais01.bin` (application offset `0x08004000`).
+
+For SWD flashing you can run:
 
 ```bash
-make flash
-# or manually:
-st-flash write build/dragino-ais01lb.bin 0x08004000
+st-flash write build/ais01.bin 0x08004000
 ```
 
-### 3. Connect Serial
+### 3. Open the serial console
 
 ```bash
 minicom -D /dev/ttyUSB0 -b 115200
 ```
 
-### 4. Configure
+### 4. Provision LoRaWAN credentials
 
-```
-AT+DEVEUI=<your_deveui>
-AT+APPEUI=<your_appeui>
-AT+APPKEY=<your_appkey>
+```text
+AT+DEVEUI=<16-char hex>
+AT+APPEUI=<16-char hex>
+AT+APPKEY=<32-char hex>
 AT+JOIN
 ```
 
 ## Documentation
 
-- **[Quick Start Guide](docs/QUICK_START.md)** - Get started in 5 minutes
-- **[AT Commands Reference](docs/README.md)** - Complete AT command list
-- **[Test Guide](docs/TEST_GUIDE.md)** - 12 validation tests
-- **[Architecture](docs/ARCHITECTURE.md)** - Detailed architecture
+- **Architecture overview** – `docs/rebuild/Firmware_Architecture_Map.md`
+- **AT command handlers** – `docs/rebuild/AT_Handlers.md`
+- **Downlink opcode map** – `docs/rebuild/Downlink_Dispatcher.md`
+- **Remote calibration details** – `docs/rebuild/Calibration_Engine.md`
+- **Power optimisation notes** – `docs/rebuild/Hardware_Power.md`
+- **Validation plan** – `docs/rebuild/Test_Plan.md`
+
+Historical reverse-engineering notes (Ghidra, OEM firmware) live under `docs/AIS01_bin_*` and `docs/firmware/`.
 
 ## Project Structure
 
 ```
-dragino-ais01lb-firmware/
+AIS01-Lorawan-EndNode/
 ├── src/
-│   ├── app/              # Application code
-│   ├── board/            # Board support (STM32L072 + SX1276)
-│   ├── cmsis/            # CMSIS + HAL
-│   ├── lorawan/          # Minimal LoRaWAN stack (core, crypto, region)
-│   ├── radio/            # SX1276 driver
-│   └── system/           # System utilities
-├── docs/                 # Documentation
-├── Makefile              # Build system
-└── stm32l072xx_flash_app.ld  # Linker script
+│   ├── app/          # Application logic, AT surface, storage, power, calibration
+│   ├── board/        # STM32L072 + SX1276 board support (GPIO, UART, SPI, RTC, LPM)
+│   ├── cmsis/        # CMSIS headers, startup, system clock
+│   ├── lorawan/      # Semtech LoRaMAC-node core, crypto, regions
+│   ├── radio/        # SX1276 radio driver
+│   └── system/       # Portable utilities (timers, fifo, nvmm, HAL stubs)
+├── docs/             # Specs, RE notes, test plans
+├── Makefile          # Build system (PROJECT=ais01)
+└── stm32l072xx_flash_app.ld  # Linker script with 0x08004000 app offset
 ```
 
 ## Requirements
 
-- **Toolchain**: arm-none-eabi-gcc (10.3+)
-- **Flash tool**: st-flash or STM32CubeProgrammer
-- **LoRaWAN Gateway**: AU915 Sub-band 2 enabled
+- `arm-none-eabi-gcc` 10.3+ (tested with Arm GNU Toolchain 14.3 rel1)
+- GNU Make
+- Dragino OTA Tool (or SWD programmer)
+- AU915 gateway with Sub-band 2 enabled
 
-## AT Commands
+## Key AT Commands
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `AT` | Test | `AT` → `OK` |
-| `AT+VER` | Firmware version | `AT+VER` |
+| `AT` | Ping the parser | `AT` → `OK` |
+| `AT+VER` | Firmware version banner | `AT+VER` |
 | `AT+DEVEUI=<hex>` | Set DevEUI | `AT+DEVEUI=0102030405060708` |
 | `AT+APPEUI=<hex>` | Set AppEUI | `AT+APPEUI=0102030405060708` |
-| `AT+APPKEY=<hex>` | Set AppKey | `AT+APPKEY=01020304...` |
-| `AT+JOIN` | Join network | `AT+JOIN` |
-| `AT+TDC=<ms>` | TX duty cycle | `AT+TDC=60000` |
-| `AT+ADR=<0/1>` | Enable/disable ADR | `AT+ADR=1` |
-| `AT+BAT` | Battery level | `AT+BAT` |
-| `ATZ` | Reset device | `ATZ` |
+| `AT+APPKEY=<hex>` | Set AppKey | `AT+APPKEY=001122...` |
+| `AT+JOIN` | Trigger OTAA join | `AT+JOIN` |
+| `AT+TDC=<ms>` | Set TX interval | `AT+TDC=60000` |
+| `AT+ADR=<0/1>` | Enable or disable ADR | `AT+ADR=1` |
+| `AT+CALIBREMOTE=<hex>` | Remote calibration payload apply/query | `AT+CALIBREMOTE=0123...` |
+| `ATZ` | Soft reboot | `ATZ` |
 
-See [docs/README.md](docs/README.md) for complete list.
+Consult `docs/rebuild/AT_Handlers.md` for the full list.
 
-## Power Consumption
+## Power Consumption Targets
 
 | Mode | Current | Notes |
 |------|---------|-------|
-| TX (LoRa) | ~120 mA | During transmission |
-| RUN (CPU) | ~1.5 mA | Processing |
-| STOP | <20 µA | Target (RTC + flash standby) |
+| TX (LoRa) | ~120 mA | Depends on RF output power |
+| RUN | ~1.5 mA | MCU active, peripherals as needed |
+| STOP | <20 µA | RTC + SRAM retention only |
 
-## License
+## Versioning
 
-This firmware bundles third-party AES/CMAC implementations (see source headers) alongside original Waterplan code.
+Current development build: **1.0.0-dev** (custom firmware replacing Dragino OEM).
 
-## Author
+## Credits
 
-Tomas Balmer - Waterplan
-- Email: tomas.balmer@waterplan.com
-- GitHub: [@tomasbalmer](https://github.com/tomasbalmer)
-
-## Version
-
-**1.0.0** - Initial release
+Developed by Waterplan. LoRaMAC-node components © Semtech.

@@ -5,7 +5,7 @@
 ##############################################################################
 
 # Project name
-PROJECT = dragino-ais01lb
+PROJECT = ais01
 
 # Build directory
 BUILD_DIR = build
