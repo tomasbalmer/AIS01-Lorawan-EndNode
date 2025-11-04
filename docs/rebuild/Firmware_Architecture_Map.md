@@ -5,7 +5,7 @@
 | Boot & Main State Machine | `0x08004000–0x080051FF` | Reset vector (`0x0800F30D`), state dispatcher (Loop around `FUN_0000F28C`) | Existing: `docs/ARCHITECTURE.md` |
 | LoRaWAN Core | `0x08005214–0x08005B68` | `FUN_00001214` (StackInit), `FUN_0000122C` (Join), `FUN_00001238` (Uplink), `FUN_00001244` (Downlink) | `docs/rebuild/Lorawan_Core.md` |
 | AT Command Layer | `0x08006000–0x080064A4` | `FUN_00002000` (Parser), `FUN_00002030` (`AT+JOIN`), `FUN_0000203C` (`AT+TDC`), … `FUN_00002474` (Region helpers) | `docs/rebuild/AT_Handlers.md` |
-| Hardware & Power | `0x08007000–0x0800742C` | `FUN_00003000` (Init), `FUN_00003018` (STOP mode), `FUN_00003030` (Storage), `FUN_00003060` (Calibration) | `docs/rebuild/Hardware_Power.md` |
+| Hardware & Power | `0x08007000–0x0800742C` | `FUN_00003000` (Init), `FUN_00003018` (STOP mode), `FUN_00003030` (Storage), `FUN_00003060` (Calibration) | `docs/rebuild/Hardware_Power.md`, `docs/rebuild/Calibration_Engine.md` |
 | Data Tables & Strings | `0x08014500–0x080183FF` | AT command names/help (`0x08016A06`), user messages (`0x08017300+`) | `docs/AIS01_bin_analysis/AIS01_strings.csv` |
 | Downlink Opcode Table | `0x08014ABC` (+) | Handler pointers for opcodes (`0x01…0x24`); dispatcher @ `0x080123E0` | `docs/rebuild/Downlink_Dispatcher.md` |
 | EEPROM Shadow | `0x08080800–0x08080FFF` | Config block consumed by storage routines | `docs/AIS01_bin_analysis/AIS01_nvm_map.txt` |
