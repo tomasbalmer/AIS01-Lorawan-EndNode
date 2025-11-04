@@ -32,6 +32,28 @@ static Gpio_t Led2;
 static Gpio_t Led3;
 static Gpio_t Led4;
 
+static inline uint32_t BoardGetPrimask(void)
+{
+    uint32_t primask;
+    __asm volatile("MRS %0, PRIMASK" : "=r"(primask));
+    return primask;
+}
+
+static inline void BoardSetPrimask(uint32_t primask)
+{
+    __asm volatile("MSR PRIMASK, %0" : : "r"(primask) : "memory");
+}
+
+static inline void BoardDisableIrq(void)
+{
+    __asm volatile("cpsid i" : : : "memory");
+}
+
+static inline void BoardWfi(void)
+{
+    __asm volatile("wfi");
+}
+
 static void SystemClockConfig(void)
 {
     /* Enable HSI16 and use as system clock */
@@ -56,13 +78,13 @@ static void BoardUnusedIoInit(void)
 
 void BoardCriticalSectionBegin(uint32_t *mask)
 {
-    *mask = __get_PRIMASK();
-    __disable_irq();
+    *mask = BoardGetPrimask();
+    BoardDisableIrq();
 }
 
 void BoardCriticalSectionEnd(uint32_t *mask)
 {
-    __set_PRIMASK(*mask);
+    BoardSetPrimask(*mask);
 }
 
 void BoardInitPeriph(void)
@@ -106,12 +128,17 @@ void BoardDeInitMcu(void)
 
 void BoardResetMcu(void)
 {
-    NVIC_SystemReset();
+    SCB->AIRCR = (uint32_t)((0x5FAUL << SCB_AIRCR_VECTKEY_Pos) | SCB_AIRCR_SYSRESETREQ_Msk);
+    __asm volatile("dsb");
+    while (1)
+    {
+        __asm volatile("nop");
+    }
 }
 
 void BoardLowPowerHandler(void)
 {
-    __WFI();
+    BoardWfi();
 }
 
 uint32_t BoardGetRandomSeed(void)

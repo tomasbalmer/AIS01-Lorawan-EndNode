@@ -2,7 +2,7 @@
 #include "lorawan_crypto.h"
 #include "lorawan_region.h"
 #include "radio.h"
-#include "board/board.h"
+#include "board.h"
 #include "storage.h"
 #include "config.h"
 #include "timer.h"

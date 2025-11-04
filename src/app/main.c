@@ -321,16 +321,3 @@ static void ProcessUartInput(void)
     }
 }
 
-/* ============================================================================
- * PRINTF REDIRECTION (for DEBUG_PRINT)
- * ========================================================================== */
-#ifdef __GNUC__
-int _write(int fd, char *ptr, int len)
-{
-    for (int i = 0; i < len; i++)
-    {
-        UartPutChar(&Uart2, ptr[i]);
-    }
-    return len;
-}
-#endif

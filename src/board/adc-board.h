@@ -12,7 +12,7 @@ extern "C" {
 
 #include <stdint.h>
 #include "stm32l0xx.h"
-#include "system/gpio.h"
+#include "gpio.h"
 
 /*!
  * ADC object type definition
@@ -129,6 +129,7 @@ void AdcMcuDeInit( Adc_t *obj );
  * \retval value Analog value
  */
 uint16_t AdcMcuReadChannel( Adc_t *obj, uint32_t channel );
+void AdcMcuConfig( void );
 
 #ifdef __cplusplus
 }

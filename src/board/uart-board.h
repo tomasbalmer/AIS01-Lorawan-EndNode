@@ -1,7 +1,7 @@
 #ifndef UART_BOARD_H
 #define UART_BOARD_H
 
-#include "system/uart.h"
+#include "uart.h"
 
 void UartMcuInit(Uart_t *obj, UartId_t uartId, PinNames tx, PinNames rx);
 void UartMcuConfig(Uart_t *obj, UartMode_t mode, uint32_t baudrate, WordLength_t wordLength, StopBits_t stopBits, Parity_t parity, FlowCtrl_t flowCtrl);

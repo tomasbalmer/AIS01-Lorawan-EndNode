@@ -21,6 +21,7 @@
  * \author    Gregory Cristian ( Semtech )
  */
 #include <stdbool.h>
+#include <stddef.h>
 #include "pinName-board.h"
 #include "adc-board.h"
 
@@ -31,28 +32,33 @@ static bool AdcInitialized = false;
 
 void AdcInit( Adc_t *obj, PinNames adcInput )
 {
-    if( AdcInitialized == false )
+    if( ( obj == NULL ) || ( AdcInitialized == true ) )
     {
-        AdcInitialized = true;
-
-        AdcMcuInit( obj, adcInput );
-        AdcMcuConfig( );
+        return;
     }
+
+    AdcMcuInit( obj, adcInput );
+    AdcMcuConfig( );
+    AdcInitialized = true;
 }
 
 void AdcDeInit( Adc_t *obj )
 {
+    if( ( obj == NULL ) || ( AdcInitialized == false ) )
+    {
+        return;
+    }
+
+    AdcMcuDeInit( obj );
     AdcInitialized = false;
 }
 
 uint16_t AdcReadChannel( Adc_t *obj, uint32_t channel )
 {
-    if( AdcInitialized == true )
-    {
-        return AdcMcuReadChannel( obj, channel );
-    }
-    else
+    if( ( obj == NULL ) || ( AdcInitialized == false ) )
     {
         return 0;
     }
+
+    return AdcMcuReadChannel( obj, channel );
 }

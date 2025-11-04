@@ -1,6 +1,6 @@
-#include "system/hal_stubs.h"
-#include "system/delay.h"
-#include "board/rtc-board.h"
+#include "hal_stubs.h"
+#include "delay.h"
+#include "rtc-board.h"
 
 uint32_t HAL_GetTick(void)
 {

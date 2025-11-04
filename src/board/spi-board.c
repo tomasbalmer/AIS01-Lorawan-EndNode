@@ -9,7 +9,24 @@
 #define SPI_DATASIZE_16BIT 1
 #endif
 
-static SPI_HandleTypeDef SpiHandle[2];
+static uint32_t SpiComputePrescaler(uint32_t targetHz)
+{
+    if (targetHz == 0U)
+    {
+        return 7U;
+    }
+
+    uint32_t spiClk = SystemCoreClock;
+    uint32_t prescaler = 0U;
+
+    while ((prescaler < 7U) && (spiClk > targetHz))
+    {
+        prescaler++;
+        spiClk >>= 1;
+    }
+
+    return prescaler;
+}
 
 void SpiInit(Spi_t *obj, SpiId_t spiId, PinNames mosi, PinNames miso, PinNames sclk, PinNames nss)
 {

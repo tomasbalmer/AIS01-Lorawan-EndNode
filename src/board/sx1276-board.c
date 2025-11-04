@@ -34,6 +34,7 @@
  * \retval PaSelect RegPaConfig PaSelect value
  */
 static uint8_t SX1276GetPaSelect( int8_t power );
+bool SX1276CheckRfFrequency( uint32_t frequency );
 
 /*!
  * Flag used to set the RF switch control pins in low power mode when the radio is not active.

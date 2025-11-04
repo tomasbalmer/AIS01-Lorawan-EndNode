@@ -90,8 +90,11 @@ $(SYSTEM_DIR)/gpio.c \
 $(SYSTEM_DIR)/timer.c \
 $(SYSTEM_DIR)/systime.c \
 $(SYSTEM_DIR)/nvmm.c \
+$(SYSTEM_DIR)/fifo.c \
 $(SYSTEM_DIR)/adc.c \
 $(SYSTEM_DIR)/uart.c \
+$(SYSTEM_DIR)/hal_stubs.c \
+$(SYSTEM_DIR)/syscalls.c \
 $(SYSTEM_DIR)/utilities.c
 
 # Startup file

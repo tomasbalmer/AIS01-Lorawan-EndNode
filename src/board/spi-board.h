@@ -2,7 +2,7 @@
 #define SPI_BOARD_H
 
 #include <stdint.h>
-#include "system/spi.h"
+#include "spi.h"
 
 /* SPI Handle structure stub */
 typedef struct

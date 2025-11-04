@@ -36,16 +36,6 @@ extern "C"
     void SX1276DbgPinTxWrite(uint8_t state);
     void SX1276DbgPinRxWrite(uint8_t state);
 
-    /*!
-     * Radio registers initialization structure
-     */
-    typedef struct
-    {
-        uint8_t Modem;
-        uint8_t Addr;
-        uint8_t Value;
-    } RadioRegisters_t;
-
 /*!
  * Radio registers initialization values
  * This is a minimal set - registers will be configured as needed during operation
@@ -53,6 +43,8 @@ extern "C"
 #define RADIO_INIT_REGISTERS_VALUE \
     {                              \
     }
+
+    uint32_t SX1276GetDio1PinState( void );
 
 #ifdef __cplusplus
 }

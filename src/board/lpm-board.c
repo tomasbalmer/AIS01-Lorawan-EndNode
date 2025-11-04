@@ -24,6 +24,10 @@
  */
 #include <stdint.h>
 #include "stm32l0xx.h"
+
+#ifndef __weak
+#define __weak __attribute__((weak))
+#endif
 #include "utilities.h"
 #include "lpm-board.h"
 

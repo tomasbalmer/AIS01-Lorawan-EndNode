@@ -27,6 +27,7 @@
 
 #include "utilities.h"
 #include "eeprom-board.h"
+#include "crc32.h"
 #include "nvmm.h"
 
 uint16_t NvmmWrite( uint8_t* src, uint16_t size, uint16_t offset )

@@ -2,7 +2,7 @@
 #define GPIO_BOARD_H
 
 #include <stdint.h>
-#include "system/gpio.h"
+#include "gpio.h"
 
 /* GPIO Alternate Function definitions for STM32L072 */
 #define GPIO_AF0_SPI1 0x00U
