@@ -9,6 +9,7 @@
 #include "config.h"
 #include "storage.h"
 #include "calibration.h"
+#include "sensor.h"
 #include "lorawan_app.h"
 #include "board.h"
 #include "stm32l072xx.h"
@@ -63,9 +64,6 @@ static uint16_t g_ChannelMask = 0x00FF;  /* Default: channels 0-7 enabled (sub-b
 static uint32_t g_WakeupInterval = 60000;  /* Default: 60 seconds */
 static uint8_t g_PlatformData[32] = {0};  /* Custom platform data */
 static uint8_t g_UserSettings[32] = {0};  /* User-defined settings */
-static uint8_t g_SensorInitialized = 0;  /* Sensor initialization status */
-static uint8_t g_SensorMode = 0;  /* Sensor operation mode */
-static uint8_t g_SensorPowerOn = 0;  /* Sensor power status */
 static uint8_t g_LowPowerEnabled = 1;  /* Low power mode enabled */
 static uint8_t g_DutyCycleEnabled = 0;  /* Duty cycle enforcement (AU915 doesn't require it) */
 static uint8_t g_TestModeEnabled = 0;  /* RF test mode status */
@@ -1755,46 +1753,53 @@ static ATCmdResult_t ATCmd_HandleUserSettings(int argc, char *argv[])
 
 static ATCmdResult_t ATCmd_HandleSensorInit(int argc, char *argv[])
 {
-    /* Initialize sensor hardware */
     if (argc != 1)
     {
         return ATCMD_INVALID_PARAM;
     }
 
-    /* Power on sensor, configure UART/I2C, etc. */
-    g_SensorPowerOn = 1;
-    g_SensorInitialized = 1;
+    if (!Sensor_Init())
+    {
+        ATCmd_SendResponse("Sensor initialization failed\r\n");
+        return ATCMD_ERROR;
+    }
 
-    ATCmd_SendResponse("Sensor initialized\r\n");
+    ATCmd_SendResponse("AIS01_LB Detected\r\n");
     return ATCMD_OK;
 }
 
 static ATCmdResult_t ATCmd_HandleSensorRead(int argc, char *argv[])
 {
-    /* Read sensor data */
     if (argc != 1)
     {
         return ATCMD_INVALID_PARAM;
     }
 
-    if (!g_SensorInitialized)
+    if (!Sensor_IsInitialized())
     {
         ATCmd_SendResponse("Sensor not initialized\r\n");
         return ATCMD_ERROR;
     }
 
-    /* Read sensor data (placeholder values) */
-    /* In real implementation, would communicate with sensor via UART/I2C */
-    uint16_t value1 = 1234;  /* Example sensor reading */
-    uint16_t value2 = 5678;  /* Example sensor reading */
+    SensorSample_t sample;
+    if (!Sensor_Read(&sample))
+    {
+        if (!Sensor_GetLastSample(&sample))
+        {
+            ATCmd_SendResponse("Sensor read failed\r\n");
+            return ATCMD_ERROR;
+        }
+    }
 
-    ATCmd_SendFormattedResponse("+SENSORREAD: %d,%d\r\n", value1, value2);
+    ATCmd_SendFormattedResponse("+SENSORREAD:%u,%u\r\n",
+                                (unsigned int)sample.primary,
+                                (unsigned int)sample.secondary);
     return ATCMD_OK;
 }
 
 static ATCmdResult_t ATCmd_HandleSensorCalibrate(int argc, char *argv[])
 {
-    if (!g_SensorInitialized)
+    if (!Sensor_IsInitialized())
     {
         ATCmd_SendResponse("Sensor not initialized\r\n");
         return ATCMD_ERROR;
@@ -1802,16 +1807,34 @@ static ATCmdResult_t ATCmd_HandleSensorCalibrate(int argc, char *argv[])
 
     if (argc == 1)
     {
-        /* Perform auto-calibration */
-        ATCmd_SendResponse("Calibrating sensor...\r\n");
-        HAL_Delay(1000);  /* Simulate calibration time */
-        ATCmd_SendResponse("Sensor calibrated\r\n");
+        Sensor_ResetCalibration();
+        ATCmd_SendResponse("Set after calibration time or take effect after ATZ\r\n");
         return ATCMD_OK;
     }
-    else if (argc >= 2)
+
+    if (argc == 3)
     {
-        /* Manual calibration with parameters */
-        ATCmd_SendResponse("Manual calibration complete\r\n");
+        char *end = NULL;
+        uint32_t parameter = strtoul(argv[1], &end, 0);
+        if ((end == NULL) || (*end != '\0'))
+        {
+            return ATCMD_INVALID_PARAM;
+        }
+
+        end = NULL;
+        uint32_t value = strtoul(argv[2], &end, 0);
+        if ((end == NULL) || (*end != '\0'))
+        {
+            return ATCMD_INVALID_PARAM;
+        }
+
+        if (!Sensor_UpdateCalibration(parameter, value))
+        {
+            ATCmd_SendResponse("Calibration update failed\r\n");
+            return ATCMD_ERROR;
+        }
+
+        ATCmd_SendResponse("Set after calibration time or take effect after ATZ\r\n");
         return ATCMD_OK;
     }
 
@@ -1822,17 +1845,14 @@ static ATCmdResult_t ATCmd_HandleSensorMode(int argc, char *argv[])
 {
     if (argc == 1)
     {
-        /* GET */
-        ATCmd_SendFormattedResponse("+SENSORMODE: %d\r\n", g_SensorMode);
+        ATCmd_SendFormattedResponse("+SENSORMODE: %d\r\n", (int)Sensor_GetMode());
         return ATCMD_OK;
     }
     else if (argc == 2)
     {
-        /* SET - mode: 0=low power, 1=normal, 2=high precision */
         int mode = atoi(argv[1]);
-        if (mode >= 0 && mode <= 2)
+        if (Sensor_SetMode((SensorMode_t)mode))
         {
-            g_SensorMode = (uint8_t)mode;
             return ATCMD_OK;
         }
     }
@@ -1843,26 +1863,37 @@ static ATCmdResult_t ATCmd_HandleSensorPower(int argc, char *argv[])
 {
     if (argc == 1)
     {
-        /* GET */
-        ATCmd_SendFormattedResponse("+SENSORPWR: %d\r\n", g_SensorPowerOn);
+        ATCmd_SendFormattedResponse("+SENSORPWR: %d\r\n", Sensor_IsPowered() ? 1 : 0);
         return ATCMD_OK;
     }
     else if (argc == 2)
     {
-        /* SET */
         int power = atoi(argv[1]);
         if (power == 0)
         {
-            /* Power off sensor */
-            g_SensorPowerOn = 0;
-            g_SensorInitialized = 0;
+            if (!Sensor_SetPower(false))
+            {
+                ATCmd_SendResponse("Sensor power change failed\r\n");
+                return ATCMD_ERROR;
+            }
             ATCmd_SendResponse("Sensor powered off\r\n");
             return ATCMD_OK;
         }
         else if (power == 1)
         {
-            /* Power on sensor */
-            g_SensorPowerOn = 1;
+            if (!Sensor_IsInitialized())
+            {
+                if (!Sensor_Init())
+                {
+                    ATCmd_SendResponse("Sensor initialization failed\r\n");
+                    return ATCMD_ERROR;
+                }
+            }
+            else if (!Sensor_SetPower(true))
+            {
+                ATCmd_SendResponse("Sensor power change failed\r\n");
+                return ATCMD_ERROR;
+            }
             ATCmd_SendResponse("Sensor powered on\r\n");
             return ATCMD_OK;
         }

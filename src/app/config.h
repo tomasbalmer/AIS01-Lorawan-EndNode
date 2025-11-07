@@ -122,6 +122,11 @@ extern "C"
  * ========================================================================== */
 #define SENSOR_ENABLE_PIN_ENABLED 1
 #define SENSOR_POWER_ON_DELAY_MS 100
+#define SENSOR_WAKEUP_MIN_INTERVAL_S 5U
+#define SENSOR_WAKEUP_DEFAULT_MS (SENSOR_WAKEUP_MIN_INTERVAL_S * 1000UL)
+#define SENSOR_FRAME_MAX_SIZE 64U
+#define SENSOR_FIFO_SIZE SENSOR_FRAME_MAX_SIZE
+#define SENSOR_HOUSEKEEPING_INTERVAL_MS 15000UL
 
 #ifdef __cplusplus
 }

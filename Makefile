@@ -50,7 +50,8 @@ $(SRC_DIR)/app/storage.c \
 $(SRC_DIR)/app/calibration.c \
 $(SRC_DIR)/app/power.c \
 $(SRC_DIR)/app/atcmd.c \
-$(SRC_DIR)/app/lorawan_app.c
+$(SRC_DIR)/app/lorawan_app.c \
+$(SRC_DIR)/app/sensor.c
 
 # Board sources
 BOARD_SOURCES = \

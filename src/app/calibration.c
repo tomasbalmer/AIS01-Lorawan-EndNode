@@ -11,6 +11,7 @@
 #include <string.h>
 #include "calibration.h"
 #include "config.h"
+#include "sensor.h"
 #include <stdio.h>
 
 #ifndef DEBUG_PRINT
@@ -149,6 +150,8 @@ static bool Calibration_HandleApply(void)
     }
 
     Calibration_UpdateMirror();
+    (void)Sensor_UpdateCalibration(g_CalibrationState.Snapshot.Parameter,
+                                   g_CalibrationState.Snapshot.Value);
     g_CalibrationState.Snapshot.PendingSlots[0] = 0U;
     g_CalibrationState.Snapshot.PendingSlots[1] = 0U;
     g_CalibrationState.Snapshot.PendingSlots[2] = 0U;

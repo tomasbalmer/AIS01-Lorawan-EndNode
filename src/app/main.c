@@ -15,6 +15,7 @@
 #include "timer.h"
 #include "storage.h"
 #include "calibration.h"
+#include "sensor.h"
 #include "power.h"
 #include "atcmd.h"
 #include "lorawan_app.h"
@@ -93,6 +94,12 @@ int main(void)
         DEBUG_PRINT("ERROR: Calibration initialization failed\r\n");
     }
 
+    /* Initialize sensor interface */
+    if (!Sensor_Init())
+    {
+        DEBUG_PRINT("ERROR: Sensor initialization failed\r\n");
+    }
+
     /* Initialize power management */
     if (!Power_Init())
     {
@@ -157,6 +164,9 @@ int main(void)
     {
         /* Process UART input for AT commands */
         ProcessUartInput();
+
+        /* Service AIS sensor bridge */
+        Sensor_Process();
 
         /* Process LoRaWAN events */
         LoRaWANApp_Process();
@@ -291,21 +301,22 @@ static void OnTxTimerEvent(void *context)
 
 static void PrepareUplinkPayload(uint8_t *buffer, uint8_t *size)
 {
-    /* Example payload: Battery level + sensor data (stub) */
     uint8_t index = 0;
-
-    /* Byte 0: Battery level (0-254) */
     buffer[index++] = BoardGetBatteryLevel();
 
-    /* Bytes 1-2: Temperature (placeholder) */
-    int16_t temperature = 2200;  /* 22.0 °C */
-    buffer[index++] = (temperature >> 8) & 0xFF;
-    buffer[index++] = temperature & 0xFF;
+    SensorSample_t sample;
+    if (!Sensor_Read(&sample))
+    {
+        if (!Sensor_GetLastSample(&sample))
+        {
+            memset(&sample, 0, sizeof(sample));
+        }
+    }
 
-    /* Bytes 3-4: Sensor value (placeholder) */
-    uint16_t sensorValue = 1234;
-    buffer[index++] = (sensorValue >> 8) & 0xFF;
-    buffer[index++] = sensorValue & 0xFF;
+    buffer[index++] = (uint8_t)((sample.primary >> 8) & 0xFFU);
+    buffer[index++] = (uint8_t)(sample.primary & 0xFFU);
+    buffer[index++] = (uint8_t)((sample.secondary >> 8) & 0xFFU);
+    buffer[index++] = (uint8_t)(sample.secondary & 0xFFU);
 
     *size = index;
 }
@@ -320,4 +331,3 @@ static void ProcessUartInput(void)
         ATCmd_ProcessChar(rxChar);
     }
 }
-
