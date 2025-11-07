@@ -100,9 +100,11 @@ extern "C"
 #define AT_UART_BAUDRATE 115200
 #define AT_UART_BUFFER_SIZE 256
 
-/* Secondary UART for sensor/AI interface (future use) */
-#define SENSOR_UART_ENABLED 0
-#define SENSOR_UART_BAUDRATE 9600
+/* Secondary UART for sensor/AI interface */
+#define SENSOR_UART_ENABLED 1
+#define SENSOR_UART_BAUDRATE 115200
+#define SENSOR_UART_CMD_TIMEOUT_MS 200U
+#define SENSOR_UART_INTERBYTE_TIMEOUT_MS 20U
 
 /* ============================================================================
  * APPLICATION BUFFER SIZES
@@ -127,6 +129,16 @@ extern "C"
 #define SENSOR_FRAME_MAX_SIZE 64U
 #define SENSOR_FIFO_SIZE SENSOR_FRAME_MAX_SIZE
 #define SENSOR_HOUSEKEEPING_INTERVAL_MS 15000UL
+
+/* ============================================================================
+ * BATTERY MONITORING
+ * ========================================================================== */
+#define BATTERY_ADC_REFERENCE_MV 3300U
+#define BATTERY_SAMPLE_COUNT 4U
+#define BATTERY_STABILIZATION_DELAY_MS 5U
+#define BATTERY_ADC_FULL_SCALE 4095U
+#define BATTERY_DIVIDER_RUPPER_KOHM 200U
+#define BATTERY_DIVIDER_RLOWER_KOHM 100U
 
 #ifdef __cplusplus
 }

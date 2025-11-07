@@ -1,5 +1,4 @@
 #include <stdbool.h>
-#include <stdbool.h>
 #include "stm32l0xx.h"
 #include "utilities.h"
 #include "board.h"
@@ -7,34 +6,108 @@
 #include "gpio-board.h"
 #include "uart-board.h"
 
-#define UART_TX_FIFO_SIZE 1024
-#define UART_RX_FIFO_SIZE 1024
+#define UART_INSTANCE_COUNT 2
 
-static Uart_t *s_Uart2Obj = NULL;
+static Uart_t *s_UartObjects[UART_INSTANCE_COUNT] = { NULL, NULL };
 
-static void EnableUsart2Clock(void)
+static int8_t UartIndex(UartId_t id)
 {
-    RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+    switch (id)
+    {
+    case UART_1:
+        return 0;
+    case UART_2:
+        return 1;
+    default:
+        return -1;
+    }
+}
+
+static USART_TypeDef *GetUsartInstance(UartId_t id)
+{
+    switch (id)
+    {
+    case UART_1:
+        return USART1;
+    case UART_2:
+        return USART2;
+    default:
+        return NULL;
+    }
+}
+
+static IRQn_Type GetUsartIrq(UartId_t id)
+{
+    switch (id)
+    {
+    case UART_1:
+        return USART1_IRQn;
+    case UART_2:
+        return USART2_IRQn;
+    default:
+        return (IRQn_Type)0;
+    }
+}
+
+static void EnableUsartClock(UartId_t id)
+{
+    switch (id)
+    {
+    case UART_1:
+        RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
+        break;
+    case UART_2:
+        RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+        break;
+    default:
+        return;
+    }
     __DSB();
 }
 
-static void DisableUsart2Clock(void)
+static void DisableUsartClock(UartId_t id)
 {
-    RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
+    switch (id)
+    {
+    case UART_1:
+        RCC->APB2ENR &= ~RCC_APB2ENR_USART1EN;
+        break;
+    case UART_2:
+        RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
+        break;
+    default:
+        return;
+    }
     __DSB();
 }
 
-static void ConfigureGpioPins(Uart_t *obj, PinNames tx, PinNames rx)
+static uint32_t GetAlternateFunction(UartId_t id)
 {
-    GpioInit(&obj->Tx, tx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, GPIO_AF4_USART2);
-    GpioInit(&obj->Rx, rx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, GPIO_AF4_USART2);
+    return (id == UART_1) ? GPIO_AF4_USART1 : GPIO_AF4_USART2;
 }
 
-static void SetBaudrate(uint32_t baudrate)
+static void ConfigureGpioPins(Uart_t *obj, PinNames tx, PinNames rx, UartId_t id)
+{
+    uint32_t af = GetAlternateFunction(id);
+    GpioInit(&obj->Tx, tx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, af);
+    GpioInit(&obj->Rx, rx, PIN_ALTERNATE_FCT, PIN_PUSH_PULL, PIN_PULL_UP, af);
+}
+
+static void SetBaudrate(USART_TypeDef *instance, uint32_t baudrate)
 {
     uint32_t clock = SystemCoreClock;
     uint32_t brr = (clock + (baudrate / 2U)) / baudrate;
-    USART2->BRR = brr;
+    instance->BRR = brr;
+}
+
+static void UartEnableTxInterrupt(USART_TypeDef *instance)
+{
+    instance->CR1 |= USART_CR1_TXEIE;
+}
+
+static void UartDisableTxInterrupt(USART_TypeDef *instance)
+{
+    instance->CR1 &= ~USART_CR1_TXEIE;
 }
 
 void UartMcuInit(Uart_t *obj, UartId_t uartId, PinNames tx, PinNames rx)
@@ -44,77 +117,87 @@ void UartMcuInit(Uart_t *obj, UartId_t uartId, PinNames tx, PinNames rx)
         return;
     }
 
-    obj->UartId = uartId;
-    obj->IsInitialized = true;
-
-    if (uartId != UART_2)
+    int8_t index = UartIndex(uartId);
+    if (index < 0)
     {
         return;
     }
 
-    EnableUsart2Clock();
-    ConfigureGpioPins(obj, tx, rx);
-    s_Uart2Obj = obj;
+    obj->UartId = uartId;
+    obj->IsInitialized = true;
+
+    EnableUsartClock(uartId);
+    ConfigureGpioPins(obj, tx, rx, uartId);
+    s_UartObjects[index] = obj;
 }
 
 void UartMcuConfig(Uart_t *obj, UartMode_t mode, uint32_t baudrate, WordLength_t wordLength, StopBits_t stopBits, Parity_t parity, FlowCtrl_t flowCtrl)
 {
     (void)flowCtrl;
 
-    if ((obj == NULL) || (obj->UartId != UART_2))
+    if ((obj == NULL) || (mode != RX_TX) || (wordLength != UART_8_BIT) ||
+        (stopBits != UART_1_STOP_BIT) || (parity != NO_PARITY))
     {
         return;
     }
 
-    // Only RX_TX, 8N1 supported
-    if (mode != RX_TX || wordLength != UART_8_BIT || stopBits != UART_1_STOP_BIT || parity != NO_PARITY)
+    USART_TypeDef *instance = GetUsartInstance(obj->UartId);
+    if (instance == NULL)
     {
         return;
     }
 
-    EnableUsart2Clock();
+    EnableUsartClock(obj->UartId);
 
-    USART2->CR1 = 0;
-    USART2->CR2 = 0;
-    USART2->CR3 = 0;
+    instance->CR1 = 0;
+    instance->CR2 = 0;
+    instance->CR3 = 0;
 
-    SetBaudrate(baudrate);
+    SetBaudrate(instance, baudrate);
 
-    USART2->CR1 |= USART_CR1_TE | USART_CR1_RE;
-    USART2->CR1 |= USART_CR1_RXNEIE;
+    instance->CR1 |= USART_CR1_TE | USART_CR1_RE;
+    instance->CR1 |= USART_CR1_RXNEIE;
 
-    NVIC_SetPriority(USART2_IRQn, 2);
-    NVIC_EnableIRQ(USART2_IRQn);
+    IRQn_Type irq = GetUsartIrq(obj->UartId);
+    NVIC_SetPriority(irq, 2);
+    NVIC_EnableIRQ(irq);
 
-    USART2->CR1 |= USART_CR1_UE;
+    instance->CR1 |= USART_CR1_UE;
 }
 
 void UartMcuDeInit(Uart_t *obj)
 {
-    if ((obj == NULL) || (obj->UartId != UART_2))
+    if (obj == NULL)
     {
         return;
     }
 
-    USART2->CR1 &= ~(USART_CR1_UE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE);
-    NVIC_DisableIRQ(USART2_IRQn);
-    DisableUsart2Clock();
-    s_Uart2Obj = NULL;
-}
+    USART_TypeDef *instance = GetUsartInstance(obj->UartId);
+    if (instance == NULL)
+    {
+        return;
+    }
 
-static void UartEnableTxInterrupt(void)
-{
-    USART2->CR1 |= USART_CR1_TXEIE;
-}
+    instance->CR1 &= ~(USART_CR1_UE | USART_CR1_RXNEIE | USART_CR1_TE | USART_CR1_RE | USART_CR1_TXEIE);
+    NVIC_DisableIRQ(GetUsartIrq(obj->UartId));
+    DisableUsartClock(obj->UartId);
 
-static void UartDisableTxInterrupt(void)
-{
-    USART2->CR1 &= ~USART_CR1_TXEIE;
+    int8_t index = UartIndex(obj->UartId);
+    if (index >= 0)
+    {
+        s_UartObjects[index] = NULL;
+    }
 }
 
 uint8_t UartMcuPutChar(Uart_t *obj, uint8_t data)
 {
-    if ((obj == NULL) || (obj->UartId != UART_2))
+    if (obj == NULL)
+    {
+        return 1;
+    }
+
+    USART_TypeDef *instance = GetUsartInstance(obj->UartId);
+    if (instance == NULL)
     {
         return 1;
     }
@@ -128,16 +211,16 @@ uint8_t UartMcuPutChar(Uart_t *obj, uint8_t data)
         return 1;
     }
 
-    bool txIdle = (USART2->ISR & USART_ISR_TXE) != 0U && (USART2->CR1 & USART_CR1_TXEIE) == 0U;
+    bool txIdle = ((instance->ISR & USART_ISR_TXE) != 0U) && ((instance->CR1 & USART_CR1_TXEIE) == 0U);
 
     if (txIdle && IsFifoEmpty(&obj->FifoTx))
     {
-        USART2->TDR = data;
+        instance->TDR = data;
     }
     else
     {
         FifoPush(&obj->FifoTx, data);
-        UartEnableTxInterrupt();
+        UartEnableTxInterrupt(instance);
     }
 
     BoardCriticalSectionEnd(&mask);
@@ -146,7 +229,7 @@ uint8_t UartMcuPutChar(Uart_t *obj, uint8_t data)
 
 uint8_t UartMcuGetChar(Uart_t *obj, uint8_t *data)
 {
-    if ((obj == NULL) || data == NULL || (obj->UartId != UART_2))
+    if ((obj == NULL) || (data == NULL))
     {
         return 1;
     }
@@ -167,7 +250,7 @@ uint8_t UartMcuGetChar(Uart_t *obj, uint8_t *data)
 
 uint8_t UartMcuPutBuffer(Uart_t *obj, uint8_t *buffer, uint16_t size)
 {
-    if ((obj == NULL) || buffer == NULL)
+    if ((obj == NULL) || (buffer == NULL))
     {
         return 1;
     }
@@ -184,7 +267,7 @@ uint8_t UartMcuPutBuffer(Uart_t *obj, uint8_t *buffer, uint16_t size)
 
 uint8_t UartMcuGetBuffer(Uart_t *obj, uint8_t *buffer, uint16_t size, uint16_t *nbReadBytes)
 {
-    if ((obj == NULL) || buffer == NULL || nbReadBytes == NULL)
+    if ((obj == NULL) || (buffer == NULL) || (nbReadBytes == NULL))
     {
         return 1;
     }
@@ -201,47 +284,65 @@ uint8_t UartMcuGetBuffer(Uart_t *obj, uint8_t *buffer, uint16_t size, uint16_t *
     return 0;
 }
 
-void USART2_IRQHandler(void)
+static void UartHandleIrq(UartId_t id)
 {
-    if (s_Uart2Obj == NULL)
+    int8_t index = UartIndex(id);
+    if (index < 0)
     {
         return;
     }
 
-    uint32_t isr = USART2->ISR;
+    Uart_t *obj = s_UartObjects[index];
+    USART_TypeDef *instance = GetUsartInstance(id);
+    if ((obj == NULL) || (instance == NULL))
+    {
+        return;
+    }
+
+    uint32_t isr = instance->ISR;
 
     if (isr & USART_ISR_RXNE)
     {
-        uint8_t byte = (uint8_t)(USART2->RDR & 0xFFU);
-        if (!IsFifoFull(&s_Uart2Obj->FifoRx))
+        uint8_t byte = (uint8_t)(instance->RDR & 0xFFU);
+        if (!IsFifoFull(&obj->FifoRx))
         {
-            FifoPush(&s_Uart2Obj->FifoRx, byte);
-            if (s_Uart2Obj->IrqNotify != NULL)
+            FifoPush(&obj->FifoRx, byte);
+            if (obj->IrqNotify != NULL)
             {
-                s_Uart2Obj->IrqNotify(UART_NOTIFY_RX);
+                obj->IrqNotify(UART_NOTIFY_RX);
             }
         }
     }
 
-    if ((isr & USART_ISR_TXE) && (USART2->CR1 & USART_CR1_TXEIE))
+    if ((isr & USART_ISR_TXE) && (instance->CR1 & USART_CR1_TXEIE))
     {
-        if (!IsFifoEmpty(&s_Uart2Obj->FifoTx))
+        if (!IsFifoEmpty(&obj->FifoTx))
         {
-            uint8_t byte = FifoPop(&s_Uart2Obj->FifoTx);
-            USART2->TDR = byte;
+            uint8_t byte = FifoPop(&obj->FifoTx);
+            instance->TDR = byte;
         }
         else
         {
-            UartDisableTxInterrupt();
-            if (s_Uart2Obj->IrqNotify != NULL)
+            UartDisableTxInterrupt(instance);
+            if (obj->IrqNotify != NULL)
             {
-                s_Uart2Obj->IrqNotify(UART_NOTIFY_TX);
+                obj->IrqNotify(UART_NOTIFY_TX);
             }
         }
     }
 
     if (isr & (USART_ISR_ORE | USART_ISR_FE | USART_ISR_NE))
     {
-        USART2->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NCF;
+        instance->ICR = USART_ICR_ORECF | USART_ICR_FECF | USART_ICR_NCF;
     }
+}
+
+void USART1_IRQHandler(void)
+{
+    UartHandleIrq(UART_1);
+}
+
+void USART2_IRQHandler(void)
+{
+    UartHandleIrq(UART_2);
 }

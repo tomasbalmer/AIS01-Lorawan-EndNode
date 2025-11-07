@@ -7,6 +7,8 @@
 #include "spi.h"
 #include "uart.h"
 #include "timer.h"
+#include "adc-board.h"
+#include "delay.h"
 #include "rtc-board.h"
 #include "sx1276-board.h"
 #include "board-config.h"
@@ -31,6 +33,13 @@ static Gpio_t Led1;
 static Gpio_t Led2;
 static Gpio_t Led3;
 static Gpio_t Led4;
+static Adc_t BatteryAdc;
+static bool BatteryAdcInitialized = false;
+static Gpio_t BatteryDividerPin;
+static bool BatteryDividerConfigured = false;
+
+static void BatteryDividerControl(bool enable);
+static uint32_t BatteryCountsToMilliVolts(uint32_t counts);
 
 static inline uint32_t BoardGetPrimask(void)
 {
@@ -163,19 +172,105 @@ void BoardGetUniqueId(uint8_t *id)
     (void)id3;
 }
 
+static void BatteryDividerControl(bool enable)
+{
+    if (BATTERY_MEASURE_ENABLE == NC)
+    {
+        return;
+    }
+
+    if (!BatteryDividerConfigured)
+    {
+        GpioInit(&BatteryDividerPin, BATTERY_MEASURE_ENABLE, PIN_OUTPUT, PIN_PUSH_PULL, PIN_NO_PULL, 0);
+        BatteryDividerConfigured = true;
+    }
+
+    GpioWrite(&BatteryDividerPin, enable ? 1 : 0);
+}
+
+static uint32_t BatteryCountsToMilliVolts(uint32_t counts)
+{
+    if (BATTERY_DIVIDER_RLOWER_KOHM == 0U)
+    {
+        return 0U;
+    }
+
+    const uint32_t dividerFactor = BATTERY_DIVIDER_RUPPER_KOHM + BATTERY_DIVIDER_RLOWER_KOHM;
+    uint64_t numerator = (uint64_t)counts * BATTERY_ADC_REFERENCE_MV * dividerFactor;
+    numerator /= BATTERY_DIVIDER_RLOWER_KOHM;
+    numerator /= BATTERY_ADC_FULL_SCALE;
+    return (uint32_t)numerator;
+}
+
 uint16_t BoardBatteryMeasureVoltage(void)
 {
-    return 0;
+    if (BATTERY_MEASURE_INPUT == NC)
+    {
+        return 0;
+    }
+
+    if (!BatteryAdcInitialized)
+    {
+        AdcMcuInit(&BatteryAdc, BATTERY_MEASURE_INPUT);
+        BatteryAdcInitialized = true;
+    }
+
+    BatteryDividerControl(true);
+    if (BATTERY_STABILIZATION_DELAY_MS > 0U)
+    {
+        DelayMs(BATTERY_STABILIZATION_DELAY_MS);
+    }
+
+    uint32_t sum = 0U;
+    for (uint32_t i = 0U; i < BATTERY_SAMPLE_COUNT; i++)
+    {
+        sum += AdcMcuReadChannel(&BatteryAdc, BATTERY_ADC_CHANNEL);
+    }
+
+    BatteryDividerControl(false);
+
+    if (BATTERY_SAMPLE_COUNT > 0U)
+    {
+        sum /= BATTERY_SAMPLE_COUNT;
+    }
+
+    uint32_t millivolts = BatteryCountsToMilliVolts(sum);
+    if (millivolts > 0xFFFFU)
+    {
+        millivolts = 0xFFFFU;
+    }
+
+    return (uint16_t)millivolts;
 }
 
 uint32_t BoardGetBatteryVoltage(void)
 {
-    return 0;
+    return (uint32_t)BoardBatteryMeasureVoltage();
 }
 
 uint8_t BoardGetBatteryLevel(void)
 {
-    return 0;
+    const uint32_t mv = BoardGetBatteryVoltage();
+    const uint32_t minMv = 3300U;
+    const uint32_t maxMv = 4200U;
+
+    if (mv == 0U)
+    {
+        return 0U;
+    }
+
+    if (mv >= maxMv)
+    {
+        return 254U;
+    }
+
+    if (mv <= minMv)
+    {
+        return 1U;
+    }
+
+    uint32_t scaled = ((mv - minMv) * 253U) / (maxMv - minMv);
+    return (uint8_t)(scaled + 1U);
 }
 
 uint8_t GetBoardPowerSource(void)

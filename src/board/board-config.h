@@ -96,6 +96,15 @@ extern "C"
 #define UART_TX                                     PA_2
 #define UART_RX                                     PA_3
 
+#define SENSOR_UART_TX                              PA_9
+#define SENSOR_UART_RX                              PA_10
+#define SENSOR_POWER_ENABLE                         PA_8
+#define SENSOR_RESET                                NC
+
+#define BATTERY_MEASURE_INPUT                       PA_0
+#define BATTERY_MEASURE_ENABLE                      PA_1
+#define BATTERY_ADC_CHANNEL                         0U
+
 // Debug pins definition.
 #define RADIO_DBG_PIN_TX                            PB_13
 #define RADIO_DBG_PIN_RX                            PB_14

@@ -1,5 +1,6 @@
 #include "sensor.h"
 #include "config.h"
+#include "sensor-board.h"
 #include "hal_stubs.h"
 #include "timer.h"
 #include <limits.h>
