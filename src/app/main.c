@@ -26,12 +26,12 @@
  * ========================================================================== */
 typedef enum
 {
-    APP_STATE_BOOT = 0,               /* Initial boot and initialization */
-    APP_STATE_JOIN,                   /* Joining LoRaWAN network */
-    APP_STATE_IDLE,                   /* Idle state, waiting for events */
-    APP_STATE_UPLINK,                 /* Sending uplink data */
-    APP_STATE_RX,                     /* Receiving downlink (RX1/RX2) */
-    APP_STATE_SLEEP,                  /* Enter low power mode */
+    APP_STATE_BOOT = 0, /* Initial boot and initialization */
+    APP_STATE_JOIN,     /* Joining LoRaWAN network */
+    APP_STATE_IDLE,     /* Idle state, waiting for events */
+    APP_STATE_UPLINK,   /* Sending uplink data */
+    APP_STATE_RX,       /* Receiving downlink (RX1/RX2) */
+    APP_STATE_SLEEP,    /* Enter low power mode */
 } AppState_t;
 
 /* ============================================================================
@@ -77,16 +77,32 @@ int main(void)
     DEBUG_PRINT("===================================\r\n");
 
     /* Initialize storage */
-    if (!Storage_Init())
+    StorageStatus_t storageStatus = Storage_Init();
+    if (storageStatus == STORAGE_ERROR_INIT)
     {
-        DEBUG_PRINT("ERROR: Storage initialization failed\r\n");
-        while (1);  /* Fatal error */
+        DEBUG_PRINT("FATAL: Storage initialization failed\r\n");
+        while (1)
+            ; /* Fatal error - cannot continue */
+    }
+    else if (storageStatus == STORAGE_FACTORY_RESET)
+    {
+        DEBUG_PRINT("WARNING: Storage corrupted, factory reset applied\r\n");
+        DEBUG_PRINT("INFO: Using default configuration\r\n");
+    }
+    else if (storageStatus == STORAGE_RESTORED_FROM_BACKUP)
+    {
+        DEBUG_PRINT("WARNING: Primary storage corrupted, restored from backup\r\n");
+    }
+    else
+    {
+        DEBUG_PRINT("INFO: Storage initialized successfully\r\n");
     }
 
     /* Load configuration */
-    if (!Storage_Load(&g_Config))
+    StorageStatus_t loadStatus = Storage_Load(&g_Config);
+    if (loadStatus != STORAGE_OK)
     {
-        DEBUG_PRINT("WARNING: No valid configuration, using defaults\r\n");
+        DEBUG_PRINT("WARNING: Storage_Load returned status %d, using current config\r\n", loadStatus);
     }
 
     /* Initialize calibration module */
@@ -117,7 +133,8 @@ int main(void)
     if (!LoRaWANApp_Init())
     {
         DEBUG_PRINT("ERROR: LoRaWAN initialization failed\r\n");
-        while (1);  /* Fatal error */
+        while (1)
+            ; /* Fatal error */
     }
 
     /* Initialize TX timer */
@@ -163,10 +180,10 @@ int main(void)
      * ====================================================================== */
     while (1)
     {
-        /* Refresh watchdog to prevent timeout reset */
-        #if WATCHDOG_ENABLED
+/* Refresh watchdog to prevent timeout reset */
+#if WATCHDOG_ENABLED
         Watchdog_Refresh();
-        #endif
+#endif
 
         /* Process UART input for AT commands */
         ProcessUartInput();
@@ -180,119 +197,119 @@ int main(void)
         /* State machine */
         switch (g_AppState)
         {
-            case APP_STATE_BOOT:
-                /* Already handled above */
-                break;
+        case APP_STATE_BOOT:
+            /* Already handled above */
+            break;
 
-            case APP_STATE_JOIN:
-            {
-                /* Wait for join to complete */
+        case APP_STATE_JOIN:
+        {
+            /* Wait for join to complete */
             LoRaWANAppState_t status = LoRaWANApp_GetStatus();
 
-                if (status == LORAWAN_APP_STATE_JOINED)
-                {
-                    DEBUG_PRINT("Network joined successfully\r\n");
-                    g_AppState = APP_STATE_IDLE;
-
-                    /* Start periodic uplink timer */
-                    TimerStart(&g_TxTimer);
-                }
-                else if (status == LORAWAN_APP_STATE_JOIN_FAILED)
-                {
-                    /* Join will retry automatically */
-                    DEBUG_PRINT("Join failed, retrying...\r\n");
-                }
-                break;
-            }
-
-            case APP_STATE_IDLE:
+            if (status == LORAWAN_APP_STATE_JOINED)
             {
-                /* Check if TX timer expired */
-                if (g_TxTimerExpired && LoRaWANApp_IsJoined())
-                {
-                    g_TxTimerExpired = false;
-                    g_AppState = APP_STATE_UPLINK;
-                }
-                else if (!LoRaWANApp_IsJoined())
-                {
-                    /* Lost connection, rejoin */
-                    g_AppState = APP_STATE_JOIN;
-                    LoRaWANApp_Join();
-                }
-                else
-                {
-                    /* Enter low power mode until next event */
-#if LOW_POWER_MODE_ENABLED
-                    g_AppState = APP_STATE_SLEEP;
-#endif
-                }
-                break;
-            }
+                DEBUG_PRINT("Network joined successfully\r\n");
+                g_AppState = APP_STATE_IDLE;
 
-            case APP_STATE_UPLINK:
-            {
-                /* Prepare and send uplink payload */
-                uint8_t buffer[LORAWAN_APP_DATA_BUFFER_MAX_SIZE];
-                uint8_t size = 0;
-
-                PrepareUplinkPayload(buffer, &size);
-
-                bool confirmed = (g_Config.ConfirmedMsg != 0);
-
-                if (LoRaWANApp_SendUplink(buffer, size, g_Config.AppPort, confirmed))
-                {
-                    DEBUG_PRINT("Uplink sent (%d bytes)\r\n", size);
-                }
-                else
-                {
-                    DEBUG_PRINT("Uplink failed\r\n");
-                }
-
-                /* Restart TX timer */
+                /* Start periodic uplink timer */
                 TimerStart(&g_TxTimer);
-
-                g_AppState = APP_STATE_IDLE;
-                break;
             }
-
-            case APP_STATE_RX:
+            else if (status == LORAWAN_APP_STATE_JOIN_FAILED)
             {
-                /* Downlink reception is handled by callbacks */
-                g_AppState = APP_STATE_IDLE;
-                break;
+                /* Join will retry automatically */
+                DEBUG_PRINT("Join failed, retrying...\r\n");
             }
+            break;
+        }
 
-            case APP_STATE_SLEEP:
+        case APP_STATE_IDLE:
+        {
+            /* Check if TX timer expired */
+            if (g_TxTimerExpired && LoRaWANApp_IsJoined())
             {
+                g_TxTimerExpired = false;
+                g_AppState = APP_STATE_UPLINK;
+            }
+            else if (!LoRaWANApp_IsJoined())
+            {
+                /* Lost connection, rejoin */
+                g_AppState = APP_STATE_JOIN;
+                LoRaWANApp_Join();
+            }
+            else
+            {
+                /* Enter low power mode until next event */
 #if LOW_POWER_MODE_ENABLED
-                if (Calibration_IsBusy() || Calibration_HasPending())
-                {
-                    DEBUG_PRINT("Calibration active, skipping STOP mode\r\n");
-                    g_AppState = APP_STATE_IDLE;
-                    break;
-                }
-
-                /* Calculate time until next event */
-                uint32_t sleepTime = g_Config.TxDutyCycle;
-
-                /* Enter STOP mode with RTC wake-up */
-                Power_EnterStopMode(sleepTime);
-
-                /* After wake-up, return to IDLE */
-                g_AppState = APP_STATE_IDLE;
-#else
-                g_AppState = APP_STATE_IDLE;
+                g_AppState = APP_STATE_SLEEP;
 #endif
+            }
+            break;
+        }
+
+        case APP_STATE_UPLINK:
+        {
+            /* Prepare and send uplink payload */
+            uint8_t buffer[LORAWAN_APP_DATA_BUFFER_MAX_SIZE];
+            uint8_t size = 0;
+
+            PrepareUplinkPayload(buffer, &size);
+
+            bool confirmed = (g_Config.ConfirmedMsg != 0);
+
+            if (LoRaWANApp_SendUplink(buffer, size, g_Config.AppPort, confirmed))
+            {
+                DEBUG_PRINT("Uplink sent (%d bytes)\r\n", size);
+            }
+            else
+            {
+                DEBUG_PRINT("Uplink failed\r\n");
+            }
+
+            /* Restart TX timer */
+            TimerStart(&g_TxTimer);
+
+            g_AppState = APP_STATE_IDLE;
+            break;
+        }
+
+        case APP_STATE_RX:
+        {
+            /* Downlink reception is handled by callbacks */
+            g_AppState = APP_STATE_IDLE;
+            break;
+        }
+
+        case APP_STATE_SLEEP:
+        {
+#if LOW_POWER_MODE_ENABLED
+            if (Calibration_IsBusy() || Calibration_HasPending())
+            {
+                DEBUG_PRINT("Calibration active, skipping STOP mode\r\n");
+                g_AppState = APP_STATE_IDLE;
                 break;
             }
 
-            default:
-                g_AppState = APP_STATE_IDLE;
-                break;
+            /* Calculate time until next event */
+            uint32_t sleepTime = g_Config.TxDutyCycle;
+
+            /* Enter STOP mode with RTC wake-up */
+            Power_EnterStopMode(sleepTime);
+
+            /* After wake-up, return to IDLE */
+            g_AppState = APP_STATE_IDLE;
+#else
+            g_AppState = APP_STATE_IDLE;
+#endif
+            break;
+        }
+
+        default:
+            g_AppState = APP_STATE_IDLE;
+            break;
         }
     }
 
-    return 0;  /* Never reached */
+    return 0; /* Never reached */
 }
 
 /* ============================================================================

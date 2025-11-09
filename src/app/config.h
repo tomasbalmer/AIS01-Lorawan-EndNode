@@ -62,7 +62,7 @@ extern "C"
 
 /* Retry Configuration for Confirmed Messages */
 #define LORAWAN_DEFAULT_RETRY_COUNT 3
-#define LORAWAN_DEFAULT_RETRY_DELAY 1000  /* 1 second between retries */
+#define LORAWAN_DEFAULT_RETRY_DELAY 1000 /* 1 second between retries */
 
 /* ============================================================================
  * FLASH MEMORY CONFIGURATION
@@ -76,6 +76,11 @@ extern "C"
 #define EEPROM_SIZE (4 * 1024)
 #define EEPROM_PAGE_SIZE 64
 
+#define STORAGE_PRIMARY_OFFSET 0x0000 /* Primary at base + 0x0000 */
+#define STORAGE_BACKUP_OFFSET 0x0400  /* Backup at base + 0x0400 (1024 bytes) */
+#define STORAGE_PRIMARY_ADDRESS (EEPROM_BASE_ADDRESS + STORAGE_PRIMARY_OFFSET)
+#define STORAGE_BACKUP_ADDRESS (EEPROM_BASE_ADDRESS + STORAGE_BACKUP_OFFSET)
+
 /* ============================================================================
  * POWER MANAGEMENT CONFIGURATION
  * ========================================================================== */
@@ -83,7 +88,7 @@ extern "C"
 #define TARGET_STOP_CURRENT_UA 20 /* Target: <20 µA in STOP mode */
 
 /* Watchdog Configuration */
-#define WATCHDOG_ENABLED 1        /* Enable Independent Watchdog (IWDG) */
+#define WATCHDOG_ENABLED 1 /* Enable Independent Watchdog (IWDG) */
 
 /* ============================================================================
  * DEBUG CONFIGURATION

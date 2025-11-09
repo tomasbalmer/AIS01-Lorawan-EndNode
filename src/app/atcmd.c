@@ -440,11 +440,13 @@ static ATCmdResult_t ATCmd_HandleReset(int argc, char *argv[])
 
 static ATCmdResult_t ATCmd_HandleFactoryReset(int argc, char *argv[])
 {
-    if (Storage_FactoryReset())
+    StorageStatus_t status = Storage_FactoryReset();
+    if (status == STORAGE_OK || status == STORAGE_FACTORY_RESET)
     {
         ATCmd_SendResponse("Factory reset successful\r\n");
         return ATCMD_OK;
     }
+    ATCmd_SendResponse("Factory reset failed\r\n");
     return ATCMD_ERROR;
 }
 

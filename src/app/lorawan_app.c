@@ -24,8 +24,7 @@ static const LoRaWANCallbacks_t g_Callbacks = {
     .OnJoinSuccess = OnJoinSuccess,
     .OnJoinFailure = OnJoinFailure,
     .OnTxComplete = OnTxComplete,
-    .OnRxData = OnRxData
-};
+    .OnRxData = OnRxData};
 
 static void LoRaWANApp_LoadSettings(const StorageData_t *storage)
 {
@@ -63,13 +62,11 @@ bool LoRaWANApp_Init(void)
 {
     StorageData_t storage;
 
-    if (!Storage_Init())
+    StorageStatus_t loadStatus = Storage_Load(&storage);
+    if (loadStatus != STORAGE_OK)
     {
-        return false;
-    }
-
-    if (!Storage_Load(&storage))
-    {
+        /* Storage_Load failed - use defaults */
+        DEBUG_PRINT("LoRaWAN: Storage_Load failed (status=%d), using defaults\r\n", loadStatus);
         memset(&storage, 0, sizeof(storage));
         storage.TxDutyCycle = LORAWAN_DEFAULT_TDC;
         storage.AdrEnabled = (LORAWAN_DEFAULT_ADR_STATE != 0);
