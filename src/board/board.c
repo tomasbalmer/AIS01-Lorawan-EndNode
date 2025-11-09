@@ -13,6 +13,7 @@
 #include "sx1276-board.h"
 #include "board-config.h"
 #include "lpm-board.h"
+#include "watchdog.h"
 #include "board.h"
 #include "config.h"
 
@@ -119,6 +120,12 @@ void BoardInitMcu(void)
         RtcInit();
         BoardUnusedIoInit();
         LpmSetOffMode(LPM_APPLI_ID, LPM_DISABLE);
+
+        /* Initialize Independent Watchdog for system hang detection */
+        /* WARNING: Once enabled, watchdog CANNOT be disabled! */
+        #if WATCHDOG_ENABLED
+        Watchdog_Init();
+        #endif
 
         McuInitialized = true;
     }

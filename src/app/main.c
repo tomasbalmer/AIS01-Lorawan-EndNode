@@ -19,6 +19,7 @@
 #include "power.h"
 #include "atcmd.h"
 #include "lorawan_app.h"
+#include "watchdog.h"
 
 /* ============================================================================
  * APPLICATION STATE MACHINE
@@ -162,6 +163,11 @@ int main(void)
      * ====================================================================== */
     while (1)
     {
+        /* Refresh watchdog to prevent timeout reset */
+        #if WATCHDOG_ENABLED
+        Watchdog_Refresh();
+        #endif
+
         /* Process UART input for AT commands */
         ProcessUartInput();
 

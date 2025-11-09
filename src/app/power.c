@@ -14,6 +14,7 @@
 #include "radio.h"
 #include "rtc-board.h"
 #include "lpm-board.h"
+#include "watchdog.h"
 #include "utilities.h"
 #include "stm32l0xx.h"
 
@@ -65,6 +66,68 @@ WakeupSource_t Power_EnterStopMode(uint32_t wakeupTimeMs)
     /* Reset wake-up bookkeeping */
     g_WakeupSource = WAKEUP_SOURCE_NONE;
 
+    #if WATCHDOG_ENABLED
+    /* The IWDG continues running in STOP mode!
+     * If requested sleep time exceeds watchdog safe time,
+     * we must wake up periodically to refresh the watchdog.
+     */
+    uint32_t remainingTimeMs = wakeupTimeMs;
+    uint32_t maxStopTimeMs = Watchdog_GetMaxStopTime();
+
+    while (remainingTimeMs > 0U)
+    {
+        uint32_t thisSleeepMs = (remainingTimeMs > maxStopTimeMs) ? maxStopTimeMs : remainingTimeMs;
+
+        /* Refresh watchdog before entering STOP */
+        Watchdog_Refresh();
+
+        /* Disable peripherals to save power */
+        Power_DisablePeripherals();
+
+        /* Put radio in sleep mode (only on first iteration) */
+        if (remainingTimeMs == wakeupTimeMs)
+        {
+            Power_RadioSleep();
+        }
+
+        /* Program wake-up timer */
+        Power_ArmWakeupTimer(thisSleeepMs);
+
+        /* Enter STOP mode */
+        LpmEnterStopMode();
+
+        /* Restore clocks after STOP */
+        LpmExitStopMode();
+
+        /* Refresh watchdog immediately after wake-up */
+        Watchdog_Refresh();
+
+        /* Evaluate wake-up cause */
+        if (g_RtcWakeScheduled)
+        {
+            uint32_t elapsed = RtcGetTimerElapsedTime();
+            if (elapsed >= g_WakeupTimeoutTicks)
+            {
+                g_WakeupSource = WAKEUP_SOURCE_RTC;
+            }
+        }
+
+        /* Clean up timer state */
+        Power_DisarmWakeupTimer();
+
+        /* Update remaining time */
+        remainingTimeMs = (remainingTimeMs > thisSleeepMs) ? (remainingTimeMs - thisSleeepMs) : 0U;
+
+        /* Re-enable peripherals for next iteration or final wake-up */
+        Power_EnablePeripherals();
+    }
+
+    /* Wake radio only at final wake-up */
+    Power_RadioWakeup();
+
+    #else
+    /* Watchdog not enabled, use original single-shot sleep */
+
     /* Disable peripherals to save power */
     Power_DisablePeripherals();
 
@@ -96,6 +159,7 @@ WakeupSource_t Power_EnterStopMode(uint32_t wakeupTimeMs)
     /* Re-enable peripherals */
     Power_EnablePeripherals();
     Power_RadioWakeup();
+    #endif
 
     DEBUG_PRINT("Woke up from STOP mode (source: %d)\r\n", g_WakeupSource);
 

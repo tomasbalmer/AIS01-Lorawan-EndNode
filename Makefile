@@ -66,7 +66,8 @@ $(BOARD_DIR)/sx1276-board.c \
 $(BOARD_DIR)/eeprom-board.c \
 $(BOARD_DIR)/lpm-board.c \
 $(BOARD_DIR)/sysIrqHandlers.c \
-$(BOARD_DIR)/sensor-board.c
+$(BOARD_DIR)/sensor-board.c \
+$(BOARD_DIR)/watchdog.c
 
 # CMSIS sources
 CMSIS_SOURCES = \

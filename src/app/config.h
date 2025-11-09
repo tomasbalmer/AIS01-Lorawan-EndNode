@@ -82,6 +82,9 @@ extern "C"
 #define LOW_POWER_MODE_ENABLED 1
 #define TARGET_STOP_CURRENT_UA 20 /* Target: <20 µA in STOP mode */
 
+/* Watchdog Configuration */
+#define WATCHDOG_ENABLED 1        /* Enable Independent Watchdog (IWDG) */
+
 /* ============================================================================
  * DEBUG CONFIGURATION
  * ========================================================================== */

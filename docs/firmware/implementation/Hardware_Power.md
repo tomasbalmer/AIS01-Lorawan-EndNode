@@ -41,10 +41,3 @@ Hardware Layer (0x08007000–0x0800742C)
 
 ## How Hardware & Power Fit the Firmware Flow
 During BOOT, `FUN_00003000` configures system clocks (MSI → PLL), powers the SX1276, and reads persisted configuration. Before entering the main loop, the firmware primes the sensor UART and JPEG buffers so the first capture is ready for uplink. Throughout runtime, the application alternates between active radio windows and STOP mode; `FUN_00003018` ensures the MCU drops below 20 µA by disabling high-speed clocks and gating GPIOs, while the RTC service (`0x08007024`) re-establishes the crystal clock after wake-up. When configuration changes require persistence, the storage layer commits to EEPROM, preserving battery life by batching writes. All hardware-centric strings (battery, sleep, sensor detection) live in `AIS01_strings.csv`, guiding us to replicate the same user-facing outputs in the custom firmware.
-
-## References
-- `docs/AIS01_bin_analysis/AIS01_function_analysis.md`
-- `docs/AIS01_bin_analysis/AIS01_overview.md`
-- `docs/AIS01_bin_analysis/AIS01_strings.csv`
-- `docs/AIS01_bin_analysis/AIS01_nvm_map.txt`
-- `docs/AIS01_bin_analysis/AIS01_vectors.csv`
