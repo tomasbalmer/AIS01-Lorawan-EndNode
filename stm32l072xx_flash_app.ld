@@ -1,11 +1,11 @@
 /* Linker script for Dragino AIS01-LB (STM32L072CZ) */
-/* Application starts at 0x08004000 to preserve bootloader (16KB) */
+/* Application starts at 0x08014000 to preserve OEM bootloader (80KB) */
 
 /* Memory regions */
 MEMORY
 {
-  /* Flash: Application starts at 16KB offset (preserve bootloader) */
-  FLASH (rx) : ORIGIN = 0x08004000, LENGTH = 176K
+  /* Flash: Application starts at 80KB offset (preserve OEM bootloader) */
+  FLASH (rx) : ORIGIN = 0x08014000, LENGTH = 112K
 
   /* RAM: 20KB */
   RAM (rwx)  : ORIGIN = 0x20000000, LENGTH = 20K

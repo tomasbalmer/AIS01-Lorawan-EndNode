@@ -58,4 +58,14 @@
 - Create an action plan to be implememted
 - At last, request Tomas to execute the action plan
 
+<!------------------------------------------------------------------------------------>
+<!------- AGENT B ACTION PLAN EXECUTION --------------------------------------------->
+
+## 📦 Agent B Action Plan Execution
+
+### Action plan execution by Agent B
+- Short reflection by Agent B summarizing what the findings mean for implementation or design decisions.
+- Create an action plan to be implememted
+- At last, request Tomas to execute the action plan
+
 **End of Iteration Report**

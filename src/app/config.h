@@ -67,9 +67,9 @@ extern "C"
 /* ============================================================================
  * FLASH MEMORY CONFIGURATION
  * ========================================================================== */
-/* Bootloader protection: Application starts at offset to preserve bootloader */
-#define APP_FLASH_ORIGIN 0x08004000 /* 16KB offset */
-#define APP_FLASH_SIZE (176 * 1024) /* 176KB for app */
+/* Bootloader protection: Application starts at offset to preserve OEM bootloader */
+#define APP_FLASH_ORIGIN 0x08014000 /* 80KB offset (OEM bootloader) */
+#define APP_FLASH_SIZE (112 * 1024) /* 112KB for app */
 
 /* EEPROM Emulation in Flash (last 8KB of flash) */
 #define EEPROM_BASE_ADDRESS 0x08080000
