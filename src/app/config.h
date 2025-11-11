@@ -67,11 +67,19 @@ extern "C"
 /* ============================================================================
  * FLASH MEMORY CONFIGURATION
  * ========================================================================== */
-/* Bootloader protection: Application starts at offset to preserve OEM bootloader */
-#define APP_FLASH_ORIGIN 0x08014000 /* 80KB offset (OEM bootloader) */
-#define APP_FLASH_SIZE (112 * 1024) /* 112KB for app */
+/* Bootloader protection: Application starts at offset for OTA Tool compatibility
+ * Memory Map:
+ *   0x08000000 - 0x0800CFFF (52KB)  : OTA Bootloader v1.4
+ *   0x0800D000 - 0x0803EFFF (200KB) : Application (this firmware)
+ *   0x0803F000 - 0x0803FFFF (4KB)   : OTA Metadata (CRC, version, flags) - DO NOT WRITE
+ */
+#define APP_FLASH_ORIGIN 0x0800D000 /* 52KB offset (OTA bootloader v1.4) */
+#define APP_FLASH_SIZE (200 * 1024) /* 200KB for application */
+#define OTA_METADATA_START 0x0803F000 /* OTA metadata region start - PROTECTED */
+#define OTA_METADATA_END 0x0803FFFF   /* OTA metadata region end */
+#define OTA_METADATA_SIZE (4 * 1024)  /* 4KB reserved for OTA */
 
-/* EEPROM Emulation in Flash (last 8KB of flash) */
+/* EEPROM Emulation in Flash (internal EEPROM area, not main flash) */
 #define EEPROM_BASE_ADDRESS 0x08080000
 #define EEPROM_SIZE (4 * 1024)
 #define EEPROM_PAGE_SIZE 64
