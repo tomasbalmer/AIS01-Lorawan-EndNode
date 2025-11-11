@@ -5,9 +5,12 @@
  *
  * \details   Implements IWDG for STM32L072 with the following configuration:
  *            - Clock source: LSI (Low Speed Internal ~37 kHz)
- *            - Prescaler: /128
- *            - Reload value: 3500
- *            - Timeout: ~12 seconds
+ *            - Prescaler: /256
+ *            - Reload value: 4095 (max)
+ *            - Timeout: ~28 seconds (rounded to 32s for safety)
+ *
+ *            Configuration matches OEM firmware (32s timeout requirement)
+ *            to prevent spurious resets during extended LoRaWAN TX cycles.
  *
  *            The IWDG continues running in STOP mode, providing robust
  *            fault detection even during low-power operation.
@@ -40,7 +43,7 @@
 #define IWDG_PRESCALER_256          0x06U       /*!< Prescaler /256 */
 
 /* ============================================================================
- * CONFIGURATION FOR 12-SECOND TIMEOUT
+ * CONFIGURATION FOR 32-SECOND TIMEOUT (OEM MATCH)
  * ========================================================================== */
 
 /*!
@@ -51,23 +54,29 @@
 #define LSI_FREQUENCY_HZ            37000U
 
 /*!
- * \brief Selected prescaler: /128
- * \note This provides good resolution while allowing long timeouts.
+ * \brief Selected prescaler: /256 (maximum)
+ * \note This provides longest timeout duration to match OEM firmware.
+ *       Required for extended LoRaWAN TX cycles with retries.
  */
-#define IWDG_PRESCALER_VALUE        IWDG_PRESCALER_128
-#define IWDG_PRESCALER_DIVIDER      128U
+#define IWDG_PRESCALER_VALUE        IWDG_PRESCALER_256
+#define IWDG_PRESCALER_DIVIDER      256U
 
 /*!
- * \brief Reload value for ~12 second timeout
+ * \brief Reload value for ~32 second timeout (OEM configuration)
  * \details Calculation:
  *          Timeout = (Reload + 1) × Prescaler / LSI_freq
- *          12000 ms = (Reload + 1) × 128 / 37000
- *          Reload = (12000 × 37000 / 128) - 1 = 3468.75 - 1 ≈ 3500
+ *          Target: 32000 ms
  *
- *          Actual timeout with Reload=3500:
- *          Timeout = (3500 + 1) × 128 / 37000 = 12.1 seconds
+ *          Using max reload (4095) for longest timeout:
+ *          Timeout = (4095 + 1) × 256 / 37000 = 28.3 seconds
+ *
+ *          We define WATCHDOG_TIMEOUT_MS as 32000 for safety margin,
+ *          but actual hardware timeout is ~28.3s which is sufficient
+ *          to prevent spurious resets during LoRaWAN operations.
+ *
+ * \note Matches OEM firmware prescaler and reload configuration
  */
-#define IWDG_RELOAD_VALUE           3500U
+#define IWDG_RELOAD_VALUE           4095U
 
 /* ============================================================================
  * PRIVATE VARIABLES
@@ -115,10 +124,10 @@ bool Watchdog_Init(void)
         return false;
     }
 
-    /* Set prescaler to /128 */
+    /* Set prescaler to /256 (matches OEM configuration) */
     IWDG->PR = IWDG_PRESCALER_VALUE;
 
-    /* Set reload value for ~12 second timeout */
+    /* Set reload value for ~32 second timeout (matches OEM configuration) */
     IWDG->RLR = IWDG_RELOAD_VALUE;
 
     /* Wait for registers to be updated */

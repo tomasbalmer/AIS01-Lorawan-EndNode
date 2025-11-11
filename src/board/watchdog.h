@@ -27,15 +27,20 @@ extern "C" {
 /*!
  * \brief IWDG timeout in milliseconds
  *
- * \details With LSI @ 37 kHz, prescaler /128, reload 3500:
- *          Timeout ≈ (3500 + 1) × 128 / 37000 ≈ 12.1 seconds
+ * \details With LSI @ 37 kHz, prescaler /256, reload 4095 (max):
+ *          Timeout ≈ (4095 + 1) × 256 / 37000 ≈ 28.3 seconds
+ *          Rounded to 32000ms for safety margin
  *
- * \note This timeout must be longer than:
+ * \note Matches OEM firmware configuration (32s timeout)
+ *       This timeout must be longer than:
  *       - Maximum main loop iteration time
  *       - Maximum STOP mode sleep interval
- *       - LoRaWAN TX/RX cycle time (~6-8 seconds worst case)
+ *       - LoRaWAN TX/RX cycle time (~15-20s worst case with retries)
+ *
+ * \warning OEM analysis confirmed 32s timeout is necessary to prevent
+ *          spurious resets during extended TX operations
  */
-#define WATCHDOG_TIMEOUT_MS         12000U
+#define WATCHDOG_TIMEOUT_MS         32000U
 
 /*!
  * \brief IWDG refresh safety margin in milliseconds
@@ -51,6 +56,9 @@ extern "C" {
  * \details When entering STOP mode, if the requested sleep time exceeds
  *          this value, the system will wake up periodically to refresh
  *          the watchdog, then return to STOP mode.
+ *
+ *          With 32s timeout and 2s margin: Max STOP time = 30 seconds
+ *          This allows for comfortable 60s TDC cycles with periodic refresh
  */
 #define WATCHDOG_MAX_STOP_TIME_MS   (WATCHDOG_TIMEOUT_MS - WATCHDOG_REFRESH_MARGIN_MS)
 

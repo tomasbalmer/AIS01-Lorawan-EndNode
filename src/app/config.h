@@ -136,14 +136,35 @@ extern "C"
 #define CALIBRATION_OPCODE 0xA0
 
 /* ============================================================================
- * SENSOR CONFIGURATION (Stub for future implementation)
+ * SENSOR CONFIGURATION
  * ========================================================================== */
 #define SENSOR_ENABLE_PIN_ENABLED 1
-#define SENSOR_POWER_ON_DELAY_MS 100
+
+/*!
+ * \brief Sensor power-on stabilization delay (matches OEM firmware)
+ *
+ * \details OEM analysis confirmed 2000ms delay required for AI sensor
+ *          stabilization and 5V rail settling. Insufficient delay causes
+ *          invalid readings in first acquisition cycle.
+ *
+ * \note Reduced delays will result in corrupted sensor data
+ */
+#define SENSOR_POWER_ON_DELAY_MS 2000
+
 #define SENSOR_WAKEUP_MIN_INTERVAL_S 5U
 #define SENSOR_WAKEUP_DEFAULT_MS (SENSOR_WAKEUP_MIN_INTERVAL_S * 1000UL)
 #define SENSOR_FRAME_MAX_SIZE 64U
 #define SENSOR_FIFO_SIZE SENSOR_FRAME_MAX_SIZE
+
+/*!
+ * \brief Sensor housekeeping interval
+ *
+ * \note OEM firmware does NOT poll sensor independently - it only powers
+ *       sensor during TX window (coupled to TDC cycle). Our independent
+ *       polling consumes additional power (~5-10% battery impact).
+ *
+ * \todo Consider removing independent polling to match OEM power profile
+ */
 #define SENSOR_HOUSEKEEPING_INTERVAL_MS 15000UL
 
 /* ============================================================================
