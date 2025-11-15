@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "sensor.h"
 
 typedef struct
 {
@@ -60,6 +61,20 @@ bool UplinkEncoder_EncodeSensorStub(UplinkPayload_t *out);
 /*
  * SENSOR FRAME STUB (placeholder until Phase 5)
  * Always returns false unless build is in DEBUG_STUB mode.
+ */
+bool UplinkEncoder_EncodeSensorFrame(const SensorSample_t *sample,
+                                     uint8_t batteryLevel,
+                                     UplinkPayload_t *out);
+/*
+ * SENSOR FRAME FORMAT (OEM FORMAT)
+ * Byte 0  : 0x02
+ * Byte 1  : battery %
+ * Byte 2  : reserved = 0x00
+ * Byte 3  : reserved = 0x00
+ * Byte 4-5: primary sensor value (uint16 LE)
+ * Byte 6-7: secondary sensor value (uint16 LE)
+ * Byte 8-11: timestampMs (uint32 LE)
+ * Total = 12 bytes
  */
 
 #endif /* UPLINK_ENCODER_H */

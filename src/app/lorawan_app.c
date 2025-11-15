@@ -228,6 +228,38 @@ bool LoRaWANApp_SendDebugUplink(uint8_t fwMajor,
     return LoRaWANApp_SendEncoded(&payload);
 }
 
+bool LoRaWANApp_SendSensorUplink(void)
+{
+    uint8_t buffer[32];
+    UplinkPayload_t payload = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    if (!Sensor_IsInitialized())
+    {
+        return false;
+    }
+
+    SensorSample_t sample;
+    if (!Sensor_Read(&sample))
+    {
+        if (!Sensor_GetLastSample(&sample))
+        {
+            return false;
+        }
+    }
+
+    uint8_t batt = Sensor_GetBatteryLevel();
+
+    if (!UplinkEncoder_EncodeSensorFrame(&sample, batt, &payload))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&payload);
+}
+
 void LoRaWANApp_Process(void)
 {
     LoRaWAN_Process(&g_LoRaCtx);

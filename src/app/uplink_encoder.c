@@ -110,3 +110,39 @@ bool UplinkEncoder_EncodeSensorStub(UplinkPayload_t *out)
     return true;
 #endif
 }
+
+bool UplinkEncoder_EncodeSensorFrame(const SensorSample_t *sample,
+                                     uint8_t batteryLevel,
+                                     UplinkPayload_t *out)
+{
+    const uint8_t requiredSize = 12U;
+
+    if ((sample == NULL) ||
+        (sample->valid == false) ||
+        !UplinkEncoder_CheckBuffer(out, requiredSize))
+    {
+        return false;
+    }
+
+    uint8_t *b = out->buffer;
+
+    b[0] = 0x02U;
+    b[1] = batteryLevel;
+    b[2] = 0x00U;
+    b[3] = 0x00U;
+
+    b[4] = (uint8_t)(sample->primary & 0xFFU);
+    b[5] = (uint8_t)((sample->primary >> 8) & 0xFFU);
+
+    b[6] = (uint8_t)(sample->secondary & 0xFFU);
+    b[7] = (uint8_t)((sample->secondary >> 8) & 0xFFU);
+
+    uint32_t ts = sample->timestampMs;
+    b[8] = (uint8_t)(ts & 0xFFU);
+    b[9] = (uint8_t)((ts >> 8) & 0xFFU);
+    b[10] = (uint8_t)((ts >> 16) & 0xFFU);
+    b[11] = (uint8_t)((ts >> 24) & 0xFFU);
+
+    out->size = requiredSize;
+    return true;
+}

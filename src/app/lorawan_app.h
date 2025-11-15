@@ -75,6 +75,11 @@ bool LoRaWANApp_SendDebugUplink(uint8_t fwMajor,
                                 uint8_t fwPatch,
                                 uint8_t loraState);
 
+/*!
+ * \brief Sends a sensor uplink using the OEM frame format
+ */
+bool LoRaWANApp_SendSensorUplink(void);
+
     /*!
      * \brief Processes LoRaMAC events (must be called in main loop)
      */
