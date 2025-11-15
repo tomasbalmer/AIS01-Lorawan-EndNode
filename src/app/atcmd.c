@@ -111,6 +111,9 @@ static ATCmdResult_t ATCmd_HandleRetry(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleRetryDelay(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleSend(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleSendBinary(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleStatusUplink(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleSensorUplink(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleDebugUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedMode(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedStatus(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleAppPort(int argc, char *argv[]);
@@ -209,6 +212,9 @@ static const ATCmdEntry_t g_ATCmdTable[] = {
     { "AT+CFM", ATCmd_HandleConfirmedMode, "Get/Set confirmed mode (0/1)" },
     { "AT+CFS", ATCmd_HandleConfirmedStatus, "Get last confirmed message status" },
     { "AT+APPPORT", ATCmd_HandleAppPort, "Get/Set application port (alias)" },
+    { "AT+STATUSUP", ATCmd_HandleStatusUplink, "Send status uplink frame" },
+    { "AT+SENSORUP", ATCmd_HandleSensorUplink, "Send sensor uplink frame" },
+    { "AT+DEBUGUP", ATCmd_HandleDebugUplink, "Send debug uplink frame" },
 
     /* Time Synchronization */
     { "AT+TIMEREQ", ATCmd_HandleTimeRequest, "Request time synchronization" },
@@ -1428,6 +1434,76 @@ static ATCmdResult_t ATCmd_HandleAppPort(int argc, char *argv[])
 {
     /* This is an alias for AT+PORT */
     return ATCmd_HandlePort(argc, argv);
+}
+
+static ATCmdResult_t ATCmd_HandleStatusUplink(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    if (!LoRaWANApp_SendStatusUplink())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandleSensorUplink(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    if (!LoRaWANApp_SendSensorUplink())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandleDebugUplink(int argc, char *argv[])
+{
+    uint8_t fwMajor = 0U;
+    uint8_t fwMinor = 0U;
+    uint8_t fwPatch = 0U;
+    uint8_t loraState = 0U;
+
+    if (argc < 2 || argv[1] == NULL)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    /* Expect: AT+DEBUGUP=maj,min,patch,state */
+    if (sscanf(argv[1], "%hhu,%hhu,%hhu,%hhu", &fwMajor, &fwMinor, &fwPatch, &loraState) != 4)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    if (!LoRaWANApp_SendDebugUplink(fwMajor, fwMinor, fwPatch, loraState))
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
 }
 
 /* ============================================================================
