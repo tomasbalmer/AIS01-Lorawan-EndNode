@@ -15,18 +15,44 @@
 /* ============================================================================
  * PRIVATE DEFINITIONS
  * ========================================================================== */
-#define STORAGE_MAGIC 0xDEADBEEF
-#define STORAGE_VERSION 1
+#define OEM_STORAGE_OFFSET (EEPROM_BASE_ADDRESS + 0x0800U)
 
 /* ============================================================================
  * PRIVATE TYPES
  * ========================================================================== */
 typedef struct
 {
-    uint32_t Magic;
-    uint32_t Version;
+    StorageHeader_t Header;
     StorageData_t Data;
 } StorageBlock_t;
+
+typedef struct __attribute__((packed))
+{
+    uint8_t DevEui[8];
+    uint8_t AppEui[8];
+    uint8_t AppKey[16];
+    uint8_t NwkSKey[16];
+    uint8_t AppSKey[16];
+    uint32_t DevAddr;
+    uint32_t FrameCounterUp;
+    uint32_t FrameCounterDown;
+    uint32_t TxDutyCycle;
+    uint32_t Rx1Delay;
+    uint32_t Rx2Delay;
+    uint32_t JoinRx1Delay;
+    uint32_t JoinRx2Delay;
+    uint32_t Rx2Frequency;
+    uint8_t AdrEnabled;
+    uint8_t DataRate;
+    uint8_t TxPower;
+    uint8_t Rx2DataRate;
+    uint8_t FreqBand;
+    uint8_t ConfirmedMsg;
+    uint8_t AppPort;
+    uint8_t JoinMode;
+    uint8_t DisableFrameCounterCheck;
+    uint8_t Reserved[14];
+} OemStorageLayout_t;
 
 /* ============================================================================
  * PRIVATE VARIABLES
@@ -41,6 +67,12 @@ static uint32_t Storage_CalculateCrc(const StorageData_t *data);
 static bool Storage_FlashErase(uint32_t address, uint32_t size);
 static bool Storage_FlashWrite(uint32_t address, const uint8_t *data, uint32_t size);
 static bool Storage_FlashRead(uint32_t address, uint8_t *data, uint32_t size);
+static void Storage_SetDefaults(StorageData_t *data);
+static bool Storage_BufferIsUniform(const uint8_t *buffer, uint32_t size, uint8_t value);
+static bool Storage_ReadBlock(uint32_t address, StorageData_t *data);
+static StorageStatus_t Storage_WriteBlockRaw(const StorageData_t *data);
+static StorageStatus_t Storage_MigrateFromOem(StorageData_t *out);
+static bool Storage_OemLayoutLooksValid(const OemStorageLayout_t *oem);
 
 /* ============================================================================
  * PUBLIC FUNCTIONS
@@ -80,29 +112,7 @@ StorageStatus_t Storage_Init(void)
     else
     {
         /* Both primary and backup failed - initialize with defaults and perform factory reset */
-        memset(&g_StorageCache, 0, sizeof(StorageData_t));
-
-        /* Set default LoRaWAN parameters */
-        g_StorageCache.TxDutyCycle = LORAWAN_DEFAULT_TDC;
-        g_StorageCache.AdrEnabled = (LORAWAN_DEFAULT_ADR_STATE != 0);
-        g_StorageCache.DataRate = LORAWAN_DEFAULT_DATARATE;
-        g_StorageCache.TxPower = LORAWAN_DEFAULT_TX_POWER;
-        g_StorageCache.Rx2DataRate = LORAWAN_RX2_DATARATE;
-        g_StorageCache.Rx2Frequency = LORAWAN_RX2_FREQUENCY;
-        g_StorageCache.Rx1Delay = LORAWAN_RX1_DELAY;
-        g_StorageCache.Rx2Delay = LORAWAN_RX2_DELAY;
-        g_StorageCache.JoinRx1Delay = LORAWAN_JOIN_RX1_DELAY;
-        g_StorageCache.JoinRx2Delay = LORAWAN_JOIN_RX2_DELAY;
-        g_StorageCache.FreqBand = LORAWAN_AU915_SUB_BAND;
-        g_StorageCache.DeviceClass = LORAWAN_DEFAULT_CLASS;
-        g_StorageCache.ConfirmedMsg = (LORAWAN_DEFAULT_CONFIRMED_MSG != 0);
-        g_StorageCache.AppPort = LORAWAN_DEFAULT_APP_PORT;
-        g_StorageCache.FrameCounterUp = 0;
-        g_StorageCache.FrameCounterDown = 0;
-        g_StorageCache.JoinMode = 1;                 /* Default: OTAA */
-        g_StorageCache.DisableFrameCounterCheck = 0; /* Default: frame counter check enabled */
-        g_StorageCache.RetryCount = LORAWAN_DEFAULT_RETRY_COUNT;
-        g_StorageCache.RetryDelay = LORAWAN_DEFAULT_RETRY_DELAY;
+        Storage_SetDefaults(&g_StorageCache);
 
         g_StorageInitialized = true;
 
@@ -126,68 +136,33 @@ StorageStatus_t Storage_Load(StorageData_t *data)
         return STORAGE_ERROR_PARAM;
     }
 
-    StorageBlock_t primaryBlock;
-    StorageBlock_t backupBlock;
-    bool primaryValid = false;
-    bool backupValid = false;
+    StorageData_t temp;
 
-    /* ========================================================================
-     * STEP 1: Try to read and validate PRIMARY copy
-     * ====================================================================== */
-    if (Storage_FlashRead(STORAGE_PRIMARY_ADDRESS, (uint8_t *)&primaryBlock, sizeof(StorageBlock_t)))
+    if (Storage_ReadBlock(STORAGE_PRIMARY_ADDRESS, &temp))
     {
-        if (primaryBlock.Magic == STORAGE_MAGIC &&
-            primaryBlock.Version == STORAGE_VERSION)
-        {
-            uint32_t calculatedCrc = Storage_CalculateCrc(&primaryBlock.Data);
-            if (calculatedCrc == primaryBlock.Data.Crc)
-            {
-                primaryValid = true;
-            }
-        }
-    }
-
-    /* If primary is valid, use it immediately */
-    if (primaryValid)
-    {
-        memcpy(data, &primaryBlock.Data, sizeof(StorageData_t));
+        memcpy(data, &temp, sizeof(StorageData_t));
         return STORAGE_OK;
     }
 
-    /* ========================================================================
-     * STEP 2: Primary failed, try BACKUP copy
-     * ====================================================================== */
-    if (Storage_FlashRead(STORAGE_BACKUP_ADDRESS, (uint8_t *)&backupBlock, sizeof(StorageBlock_t)))
+    if (Storage_ReadBlock(STORAGE_BACKUP_ADDRESS, &temp))
     {
-        if (backupBlock.Magic == STORAGE_MAGIC &&
-            backupBlock.Version == STORAGE_VERSION)
-        {
-            uint32_t calculatedCrc = Storage_CalculateCrc(&backupBlock.Data);
-            if (calculatedCrc == backupBlock.Data.Crc)
-            {
-                backupValid = true;
-            }
-        }
-    }
-
-    /* If backup is valid, restore from it */
-    if (backupValid)
-    {
-        memcpy(data, &backupBlock.Data, sizeof(StorageData_t));
-
-        /* Optionally restore primary from backup (write-through) */
-        /* Note: We'll do this in Storage_Init() to avoid nested saves */
-
+        memcpy(data, &temp, sizeof(StorageData_t));
         return STORAGE_RESTORED_FROM_BACKUP;
     }
 
-    /* Return appropriate error based on what we found */
-    if (!primaryValid && !backupValid)
+    StorageStatus_t migrationStatus = Storage_MigrateFromOem(&temp);
+    if (migrationStatus == STORAGE_OK)
     {
-        return STORAGE_ERROR_CRC; /* Both corrupted or uninitialized */
+        memcpy(data, &temp, sizeof(StorageData_t));
+        StorageStatus_t persistStatus = Storage_WriteBlockRaw(&temp);
+        if (persistStatus != STORAGE_OK)
+        {
+            return persistStatus;
+        }
+        return STORAGE_OK;
     }
 
-    return STORAGE_ERROR_READ;
+    return migrationStatus;
 }
 
 StorageStatus_t Storage_Save(const StorageData_t *data)
@@ -197,70 +172,13 @@ StorageStatus_t Storage_Save(const StorageData_t *data)
         return STORAGE_ERROR_PARAM;
     }
 
-    StorageBlock_t block;
-    StorageBlock_t verifyBlock;
-
-    /* Prepare block */
-    block.Magic = STORAGE_MAGIC;
-    block.Version = STORAGE_VERSION;
-    memcpy(&block.Data, data, sizeof(StorageData_t));
-
-    /* Calculate CRC */
-    block.Data.Crc = Storage_CalculateCrc(&block.Data);
-
-    /* Erase backup region */
-    if (!Storage_FlashErase(STORAGE_BACKUP_ADDRESS, sizeof(StorageBlock_t)))
+    StorageStatus_t status = Storage_WriteBlockRaw(data);
+    if (status == STORAGE_OK && data != &g_StorageCache)
     {
-        return STORAGE_ERROR_ERASE;
+        memcpy(&g_StorageCache, data, sizeof(StorageData_t));
     }
 
-    /* Write to backup */
-    if (!Storage_FlashWrite(STORAGE_BACKUP_ADDRESS, (const uint8_t *)&block, sizeof(StorageBlock_t)))
-    {
-        return STORAGE_ERROR_WRITE;
-    }
-
-    /* Verify backup write */
-    if (!Storage_FlashRead(STORAGE_BACKUP_ADDRESS, (uint8_t *)&verifyBlock, sizeof(StorageBlock_t)))
-    {
-        return STORAGE_ERROR_VERIFY;
-    }
-
-    if (memcmp(&block, &verifyBlock, sizeof(StorageBlock_t)) != 0)
-    {
-        return STORAGE_ERROR_VERIFY;
-    }
-
-    /* Erase primary region */
-    if (!Storage_FlashErase(STORAGE_PRIMARY_ADDRESS, sizeof(StorageBlock_t)))
-    {
-        /* Backup is written, primary erase failed - still recoverable */
-        return STORAGE_ERROR_ERASE;
-    }
-
-    /* Write to primary */
-    if (!Storage_FlashWrite(STORAGE_PRIMARY_ADDRESS, (const uint8_t *)&block, sizeof(StorageBlock_t)))
-    {
-        /* Primary write failed, but backup is valid - still recoverable */
-        return STORAGE_ERROR_WRITE;
-    }
-
-    /* Verify primary write */
-    if (!Storage_FlashRead(STORAGE_PRIMARY_ADDRESS, (uint8_t *)&verifyBlock, sizeof(StorageBlock_t)))
-    {
-        /* Primary verify failed, but backup is valid - still recoverable */
-        return STORAGE_ERROR_VERIFY;
-    }
-
-    if (memcmp(&block, &verifyBlock, sizeof(StorageBlock_t)) != 0)
-    {
-        /* Primary verify failed, but backup is valid - still recoverable */
-        return STORAGE_ERROR_VERIFY;
-    }
-
-    memcpy(&g_StorageCache, data, sizeof(StorageData_t));
-
-    return STORAGE_OK;
+    return status;
 }
 
 StorageStatus_t Storage_Read(StorageKey_t key, uint8_t *buffer, uint32_t size)
@@ -668,20 +586,8 @@ StorageStatus_t Storage_FactoryReset(void)
 
 bool Storage_IsValid(void)
 {
-    StorageBlock_t block;
-
-    if (!Storage_FlashRead(EEPROM_BASE_ADDRESS, (uint8_t *)&block, sizeof(StorageBlock_t)))
-    {
-        return false;
-    }
-
-    if (block.Magic != STORAGE_MAGIC || block.Version != STORAGE_VERSION)
-    {
-        return false;
-    }
-
-    uint32_t calculatedCrc = Storage_CalculateCrc(&block.Data);
-    return (calculatedCrc == block.Data.Crc);
+    StorageData_t data;
+    return Storage_ReadBlock(STORAGE_PRIMARY_ADDRESS, &data);
 }
 
 StorageStatus_t Storage_UpdateFrameCounters(uint32_t uplink, uint32_t downlink)
@@ -712,6 +618,314 @@ StorageStatus_t Storage_UpdateJoinKeys(uint32_t devAddr, const uint8_t *nwkSKey,
 /* ============================================================================
  * PRIVATE FUNCTIONS
  * ========================================================================== */
+static void Storage_SetDefaults(StorageData_t *data)
+{
+    if (data == NULL)
+    {
+        return;
+    }
+
+    memset(data, 0, sizeof(StorageData_t));
+    data->TxDutyCycle = LORAWAN_DEFAULT_TDC;
+    data->AdrEnabled = (LORAWAN_DEFAULT_ADR_STATE != 0);
+    data->DataRate = LORAWAN_DEFAULT_DATARATE;
+    data->TxPower = LORAWAN_DEFAULT_TX_POWER;
+    data->Rx2DataRate = LORAWAN_RX2_DATARATE;
+    data->Rx2Frequency = LORAWAN_RX2_FREQUENCY;
+    data->Rx1Delay = LORAWAN_RX1_DELAY;
+    data->Rx2Delay = LORAWAN_RX2_DELAY;
+    data->JoinRx1Delay = LORAWAN_JOIN_RX1_DELAY;
+    data->JoinRx2Delay = LORAWAN_JOIN_RX2_DELAY;
+    data->FreqBand = LORAWAN_AU915_SUB_BAND;
+    data->DeviceClass = LORAWAN_DEFAULT_CLASS;
+    data->ConfirmedMsg = (LORAWAN_DEFAULT_CONFIRMED_MSG != 0);
+    data->AppPort = LORAWAN_DEFAULT_APP_PORT;
+    data->FrameCounterUp = 0;
+    data->FrameCounterDown = 0;
+    data->JoinMode = 1U;
+    data->DisableFrameCounterCheck = 0U;
+    data->RetryCount = LORAWAN_DEFAULT_RETRY_COUNT;
+    data->RetryDelay = LORAWAN_DEFAULT_RETRY_DELAY;
+}
+
+static bool Storage_BufferIsUniform(const uint8_t *buffer, uint32_t size, uint8_t value)
+{
+    if (buffer == NULL || size == 0U)
+    {
+        return true;
+    }
+
+    for (uint32_t i = 0; i < size; i++)
+    {
+        if (buffer[i] != value)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool Storage_ReadBlock(uint32_t address, StorageData_t *data)
+{
+    StorageHeader_t header;
+
+    if (!Storage_FlashRead(address, (uint8_t *)&header, sizeof(StorageHeader_t)))
+    {
+        return false;
+    }
+
+    if ((header.Magic != STORAGE_MAGIC) ||
+        (header.Version != STORAGE_VERSION) ||
+        (header.Length != sizeof(StorageData_t)))
+    {
+        return false;
+    }
+
+    if (!Storage_FlashRead(address + sizeof(StorageHeader_t), (uint8_t *)data, sizeof(StorageData_t)))
+    {
+        return false;
+    }
+
+    return (Storage_CalculateCrc(data) == data->Crc);
+}
+
+static StorageStatus_t Storage_WriteBlockRaw(const StorageData_t *data)
+{
+    if (data == NULL)
+    {
+        return STORAGE_ERROR_PARAM;
+    }
+
+    StorageBlock_t block;
+    StorageBlock_t verifyBlock;
+
+    block.Header.Magic = STORAGE_MAGIC;
+    block.Header.Version = STORAGE_VERSION;
+    block.Header.Length = sizeof(StorageData_t);
+    memcpy(&block.Data, data, sizeof(StorageData_t));
+    block.Data.Crc = Storage_CalculateCrc(&block.Data);
+
+    if (!Storage_FlashErase(STORAGE_BACKUP_ADDRESS, sizeof(StorageBlock_t)))
+    {
+        return STORAGE_ERROR_ERASE;
+    }
+
+    if (!Storage_FlashWrite(STORAGE_BACKUP_ADDRESS, (const uint8_t *)&block, sizeof(StorageBlock_t)))
+    {
+        return STORAGE_ERROR_WRITE;
+    }
+
+    if (!Storage_FlashRead(STORAGE_BACKUP_ADDRESS, (uint8_t *)&verifyBlock, sizeof(StorageBlock_t)))
+    {
+        return STORAGE_ERROR_VERIFY;
+    }
+
+    if (memcmp(&block, &verifyBlock, sizeof(StorageBlock_t)) != 0)
+    {
+        return STORAGE_ERROR_VERIFY;
+    }
+
+    if (!Storage_FlashErase(STORAGE_PRIMARY_ADDRESS, sizeof(StorageBlock_t)))
+    {
+        return STORAGE_ERROR_ERASE;
+    }
+
+    if (!Storage_FlashWrite(STORAGE_PRIMARY_ADDRESS, (const uint8_t *)&block, sizeof(StorageBlock_t)))
+    {
+        return STORAGE_ERROR_WRITE;
+    }
+
+    if (!Storage_FlashRead(STORAGE_PRIMARY_ADDRESS, (uint8_t *)&verifyBlock, sizeof(StorageBlock_t)))
+    {
+        return STORAGE_ERROR_VERIFY;
+    }
+
+    if (memcmp(&block, &verifyBlock, sizeof(StorageBlock_t)) != 0)
+    {
+        return STORAGE_ERROR_VERIFY;
+    }
+
+    return STORAGE_OK;
+}
+
+static bool Storage_OemLayoutLooksValid(const OemStorageLayout_t *oem)
+{
+    if (oem == NULL)
+    {
+        return false;
+    }
+
+    bool hasDevEui = !Storage_BufferIsUniform(oem->DevEui, sizeof(oem->DevEui), 0xFF);
+    bool hasKeys = !Storage_BufferIsUniform(oem->AppKey, sizeof(oem->AppKey), 0xFF);
+
+    if (!hasDevEui && !hasKeys)
+    {
+        return false;
+    }
+
+    if (oem->JoinMode > 1U)
+    {
+        return false;
+    }
+
+    if (oem->AdrEnabled > 1U)
+    {
+        return false;
+    }
+
+    if (oem->TxDutyCycle == 0xFFFFFFFFU)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+static StorageStatus_t Storage_MigrateFromOem(StorageData_t *out)
+{
+    if (out == NULL)
+    {
+        return STORAGE_ERROR_PARAM;
+    }
+
+    OemStorageLayout_t raw;
+    if (EepromMcuReadBuffer(OEM_STORAGE_OFFSET, (uint8_t *)&raw, sizeof(raw)) != LMN_STATUS_OK)
+    {
+        return STORAGE_ERROR_READ;
+    }
+
+    if (Storage_BufferIsUniform((const uint8_t *)&raw, sizeof(raw), 0xFF))
+    {
+        return STORAGE_ERROR_INIT;
+    }
+
+    if (!Storage_OemLayoutLooksValid(&raw))
+    {
+        return STORAGE_ERROR_INIT;
+    }
+
+    StorageData_t migrated;
+    Storage_SetDefaults(&migrated);
+
+    if (!Storage_BufferIsUniform(raw.DevEui, sizeof(raw.DevEui), 0xFF))
+    {
+        memcpy(migrated.DevEui, raw.DevEui, sizeof(raw.DevEui));
+    }
+
+    if (!Storage_BufferIsUniform(raw.AppEui, sizeof(raw.AppEui), 0xFF))
+    {
+        memcpy(migrated.AppEui, raw.AppEui, sizeof(raw.AppEui));
+    }
+
+    if (!Storage_BufferIsUniform(raw.AppKey, sizeof(raw.AppKey), 0xFF))
+    {
+        memcpy(migrated.AppKey, raw.AppKey, sizeof(raw.AppKey));
+    }
+
+    if (!Storage_BufferIsUniform(raw.NwkSKey, sizeof(raw.NwkSKey), 0xFF))
+    {
+        memcpy(migrated.NwkSKey, raw.NwkSKey, sizeof(raw.NwkSKey));
+    }
+
+    if (!Storage_BufferIsUniform(raw.AppSKey, sizeof(raw.AppSKey), 0xFF))
+    {
+        memcpy(migrated.AppSKey, raw.AppSKey, sizeof(raw.AppSKey));
+    }
+
+    if (raw.FrameCounterUp != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.FrameCounterUp, &raw.FrameCounterUp, sizeof(uint32_t));
+    }
+
+    if (raw.FrameCounterDown != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.FrameCounterDown, &raw.FrameCounterDown, sizeof(uint32_t));
+    }
+
+    if (raw.TxDutyCycle != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.TxDutyCycle, &raw.TxDutyCycle, sizeof(uint32_t));
+    }
+
+    if (raw.Rx1Delay != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.Rx1Delay, &raw.Rx1Delay, sizeof(uint32_t));
+    }
+
+    if (raw.Rx2Delay != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.Rx2Delay, &raw.Rx2Delay, sizeof(uint32_t));
+    }
+
+    if (raw.JoinRx1Delay != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.JoinRx1Delay, &raw.JoinRx1Delay, sizeof(uint32_t));
+    }
+
+    if (raw.JoinRx2Delay != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.JoinRx2Delay, &raw.JoinRx2Delay, sizeof(uint32_t));
+    }
+
+    if (raw.Rx2Frequency >= 100000000U && raw.Rx2Frequency <= 1000000000U)
+    {
+        memcpy(&migrated.Rx2Frequency, &raw.Rx2Frequency, sizeof(uint32_t));
+    }
+
+    if (raw.DevAddr != 0xFFFFFFFFU)
+    {
+        memcpy(&migrated.DevAddr, &raw.DevAddr, sizeof(uint32_t));
+    }
+
+    if (raw.DataRate != 0xFFU)
+    {
+        migrated.DataRate = (raw.DataRate & 0x0F);
+    }
+
+    if (raw.TxPower != 0xFFU)
+    {
+        migrated.TxPower = (raw.TxPower & 0x0F);
+    }
+
+    if (raw.Rx2DataRate != 0xFFU)
+    {
+        migrated.Rx2DataRate = (raw.Rx2DataRate & 0x0F);
+    }
+
+    if (raw.FreqBand != 0xFFU)
+    {
+        migrated.FreqBand = (raw.FreqBand != 0U) ? 1U : 0U;
+    }
+
+    if (raw.AppPort != 0xFFU)
+    {
+        migrated.AppPort = raw.AppPort;
+    }
+
+    if (raw.JoinMode <= 1U)
+    {
+        migrated.JoinMode = (raw.JoinMode != 0U) ? 1U : 0U;
+    }
+
+    if (raw.DisableFrameCounterCheck <= 1U)
+    {
+        migrated.DisableFrameCounterCheck =
+            (raw.DisableFrameCounterCheck != 0U) ? 1U : 0U;
+    }
+
+    if (raw.ConfirmedMsg <= 1U)
+    {
+        migrated.ConfirmedMsg = (raw.ConfirmedMsg != 0U) ? 1U : 0U;
+    }
+
+    if (raw.AdrEnabled <= 1U)
+    {
+        migrated.AdrEnabled = (raw.AdrEnabled != 0U) ? 1U : 0U;
+    }
+
+    memcpy(out, &migrated, sizeof(StorageData_t));
+    return STORAGE_OK;
+}
 
 static uint32_t Storage_CalculateCrc(const StorageData_t *data)
 {

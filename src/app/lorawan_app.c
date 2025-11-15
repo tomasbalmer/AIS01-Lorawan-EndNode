@@ -5,9 +5,8 @@
 #include "storage.h"
 #include "calibration.h"
 #include "atcmd.h"
+#include "downlink_dispatcher.h"
 #include <stdio.h>
-
-#define DOWNLINK_MIN_SIZE 1
 
 static LoRaWANAppState_t g_AppStatus = LORAWAN_APP_STATE_IDLE;
 static LoRaWANContext_t g_LoRaCtx;
@@ -19,6 +18,11 @@ static void OnJoinSuccess(uint32_t devAddr);
 static void OnJoinFailure(void);
 static void OnTxComplete(LoRaWANStatus_t status);
 static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t rssi, int8_t snr);
+static void Downlink_SetTdc(uint32_t interval);
+static void Downlink_SetAdr(bool enabled);
+static void Downlink_SetDataRate(uint8_t dr);
+static void Downlink_SetTxPower(uint8_t txp);
+static bool Downlink_ProcessCalibration(const uint8_t *payload, uint8_t size);
 
 static const LoRaWANCallbacks_t g_Callbacks = {
     .OnJoinSuccess = OnJoinSuccess,
@@ -176,77 +180,40 @@ static void OnTxComplete(LoRaWANStatus_t status)
     ATCmd_UpdateConfirmedStatus(status == LORAWAN_STATUS_SUCCESS ? 1 : 2);
 }
 
-static void HandleDownlinkOpcode(const uint8_t *payload, uint8_t size)
+static void Downlink_SetTdc(uint32_t interval)
 {
-    if (size < DOWNLINK_MIN_SIZE)
-    {
-        return;
-    }
+    Storage_Write(STORAGE_KEY_TDC, (const uint8_t *)&interval, sizeof(interval));
+    g_Settings.TxDutyCycleMs = interval;
+    g_LoRaCtx.Settings.TxDutyCycleMs = interval;
+}
 
-    switch (payload[0])
-    {
-    case 0x01: /* Set TDC */
-    {
-        if (size >= 5)
-        {
-            uint32_t interval = 0;
-            memcpy(&interval, &payload[1], sizeof(uint32_t));
-            Storage_Write(STORAGE_KEY_TDC, (uint8_t *)&interval, sizeof(uint32_t));
-            g_Settings.TxDutyCycleMs = interval;
-            g_LoRaCtx.Settings.TxDutyCycleMs = interval;
-        }
-        break;
-    }
+static void Downlink_SetAdr(bool enabled)
+{
+    uint8_t adr = enabled ? 1U : 0U;
+    Storage_Write(STORAGE_KEY_ADR, &adr, 1U);
+    g_Settings.AdrState = enabled ? LORAWAN_ADR_ON : LORAWAN_ADR_OFF;
+    g_LoRaCtx.Settings.AdrState = g_Settings.AdrState;
+}
 
-    case 0x21: /* ADR */
-    {
-        if (size >= 2)
-        {
-            uint8_t adr = payload[1] ? 1 : 0;
-            Storage_Write(STORAGE_KEY_ADR, &adr, 1);
-            g_Settings.AdrState = adr ? LORAWAN_ADR_ON : LORAWAN_ADR_OFF;
-            g_LoRaCtx.Settings.AdrState = g_Settings.AdrState;
-        }
-        break;
-    }
+static void Downlink_SetDataRate(uint8_t dr)
+{
+    Storage_Write(STORAGE_KEY_DR, &dr, 1U);
+    g_Settings.DataRate = dr;
+    g_LoRaCtx.Settings.DataRate = dr;
+}
 
-    case 0x22: /* Data rate */
-    {
-        if (size >= 2)
-        {
-            uint8_t dr = payload[1];
-            Storage_Write(STORAGE_KEY_DR, &dr, 1);
-            g_Settings.DataRate = dr;
-            g_LoRaCtx.Settings.DataRate = dr;
-        }
-        break;
-    }
+static void Downlink_SetTxPower(uint8_t txp)
+{
+    Storage_Write(STORAGE_KEY_TXP, &txp, 1U);
+    g_Settings.TxPower = txp;
+    g_LoRaCtx.Settings.TxPower = txp;
+}
 
-    case 0x23: /* TX power */
-    {
-        if (size >= 2)
-        {
-            uint8_t txp = payload[1];
-            Storage_Write(STORAGE_KEY_TXP, &txp, 1);
-            g_Settings.TxPower = txp;
-            g_LoRaCtx.Settings.TxPower = txp;
-        }
-        break;
-    }
-
-    case 0xA0: /* Remote calibration */
-    {
-        uint8_t response[CALIBRATION_BUFFER_SIZE];
-        uint8_t responseSize = 0;
-        if (Calibration_ProcessDownlink(payload, size, response, &responseSize))
-        {
-        }
-        break;
-    }
-
-    default:
-        break;
-    }
+static bool Downlink_ProcessCalibration(const uint8_t *payload, uint8_t size)
+{
+    uint8_t response[CALIBRATION_BUFFER_SIZE];
+    uint8_t responseSize = 0;
+    return Calibration_ProcessDownlink(payload, size, response, &responseSize);
 }
 
 static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t rssi, int8_t snr)
@@ -258,5 +225,19 @@ static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t 
     ATCmd_UpdateSNR(snr);
     ATCmd_UpdatePendingDownlink(size > 0 ? 1 : 0);
 
-    HandleDownlinkOpcode(buffer, size);
+    uint8_t opcode = (size > 0U) ? buffer[0] : 0U;
+    DownlinkContext_t ctx = {
+        .opcode = opcode,
+        .length = size,
+        .rssi = rssi,
+        .snr = snr};
+
+    DownlinkActions_t actions = {
+        .setTdc = Downlink_SetTdc,
+        .setAdr = Downlink_SetAdr,
+        .setDataRate = Downlink_SetDataRate,
+        .setTxPower = Downlink_SetTxPower,
+        .processCalibration = Downlink_ProcessCalibration};
+
+    Downlink_Handle(buffer, size, &ctx, &actions);
 }

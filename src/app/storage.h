@@ -17,6 +17,16 @@ extern "C"
 #include <stdint.h>
 #include <stdbool.h>
 
+#define STORAGE_MAGIC (0x41595301UL)
+#define STORAGE_VERSION (1U)
+
+    typedef struct
+    {
+        uint32_t Magic;
+        uint16_t Version;
+        uint16_t Length;
+    } StorageHeader_t;
+
     /* ============================================================================
      * STORAGE STATUS CODES
      * ========================================================================== */

@@ -1,364 +1,336 @@
-# AIS01-LB LoRaWAN End Node — Documentation
-
-**Device:** Dragino AIS01-LB (LoRaWAN AI Image End Node)
-**MCU:** STM32L072CZ
-**Radio:** SX1276 (LoRa)
-**Firmware Version:** v1.0.5
-**LoRaWAN Stack:** DR-LWS-007 (AU915)
-
----
-
-## Documentation Structure
-
-This documentation is organized into three main categories:
-
-```
-docs/
-├── analysis/           # Reverse engineering artifacts from original firmware
-├── specification/      # Consolidated technical specifications
-├── implementation/     # Implementation guides for rebuilding firmware
-├── reports/           # Progress reports and scans
-└── prompts/           # Agent prompts for automated analysis
-```
-
----
-
-## Quick Start Guide
-
-### For Understanding the Original Firmware
-Start with:
-1. `specification/Architecture_Specification.md` — System overview and module map
-2. `analysis/AIS01_overview.md` — Binary analysis summary
-3. `specification/AT_Commands_Specification.md` — Complete AT command reference
+AIS01-Lorawan-EndNode Firmware
+
+High-quality, production-architecture firmware for the Dragino AIS01-LB LoRaWAN AI Image Sensor, designed for:
+	•	LoRaWAN AU915 Sub-Band 2 (OEM-aligned)
+	•	Class A OTAA operation
+	•	Deep low-power operation suitable for long-term battery deployments
+	•	OEM-parity payloads, AT commands, and calibration workflows
+	•	Laboratory-grade stability for internal development and testing
+
+This repository represents a full-stack rewrite of the AIS01-LB firmware, created through:
+	•	hardware bring-up,
+	•	reverse engineering of the OEM firmware,
+	•	LoRaWAN stack reconstruction,
+	•	careful architectural design,
+	•	and a fully open, maintainable codebase.
+
+The firmware aims for full functional parity with the Dragino OEM firmware while providing an entirely transparent, auditable implementation suitable for R&D.
+
+⸻
+
+📘 Table of Contents
+	1.	Project Goals￼
+	2.	Key Features￼
+	3.	Architecture￼
+	4.	Repository Layout￼
+	5.	Build System￼
+	6.	Flashing Instructions￼
+	7.	AT Command Interface￼
+	8.	LoRaWAN Payload Formats (OEM-Aligned)￼
+	9.	Calibration Workflow￼
+	10.	Low-Power Design￼
+	11.	Roadmap￼
+	12.	Documentation￼
+	13.	Development Notes￼
+	14.	License￼
+
+⸻
+
+1. Project Goals
+
+The primary objectives of this firmware are:
+
+🎯 OEM Parity
+
+Match Dragino AIS01-LB OEM behavior:
+	•	Uplink formats
+	•	AT commands
+	•	Calibration flows
+	•	Bootloader compatibility
+
+🎯 Transparency & Maintainability
+
+Unlike the OEM binary, this firmware is:
+	•	fully readable,
+	•	well-architected,
+	•	thoroughly documented,
+	•	designed for long-term evolution.
+
+🎯 Laboratory Stability
+
+Version 1 focuses on internal reliability while providing hooks for future production deployments.
+
+🎯 Extendability for R&D
+
+The architecture is modular enough to:
+	•	add features without regressions,
+	•	onboard new peripherals,
+	•	expand LoRaWAN behavior,
+	•	implement advanced calibration.
+
+⸻
+
+2. Key Features
+
+✔ LoRaWAN AU915 (Sub-Band 2)
+	•	Class A OTAA
+	•	OEM-style join and uplink behavior
+	•	Configurable uplink interval (TDC)
+
+✔ AT Command System
+	•	Full set of AT commands for provisioning
+	•	Boot-time safe AT window
+	•	Runtime AT stability (never locked out)
+
+✔ OEM-Aligned Uplinks
+	•	FPORT=2 periodic sensor reading
+	•	FPORT=5 device status (band, battery, model, fw)
+	•	FPORT=3 image transfer (basic v1 trigger)
+
+✔ Calibration Engine
+	•	Local calibration (UART + PC Tool)
+	•	Remote calibration (minimal v1)
+	•	ROI/digit wheel definitions aligned with Dragino documentation
+
+✔ Low-Power Operation
+	•	STOP mode + RTC
+	•	Peripheral clock gating
+	•	Radio sleep scheduling
+	•	Watchdog-friendly sleep segmentation
 
-### For Implementing New Firmware
-Start with:
-1. `specification/Architecture_Specification.md` — System architecture
-2. `implementation/` folder — Module-by-module implementation guides
-3. `specification/LoRaWAN_Core_Specification.md` — LoRaWAN stack details
+✔ Reliability & Safety
+	•	Integrated IWDG watchdog
+	•	Clean error recovery paths
+	•	NV storage with CRC32 state protection
 
-### For Hardware Integration
-Start with:
-1. `specification/Hardware_Specification.md` — Component datasheets and pinout
-2. `analysis/AIS01_nvm_map.md` — Non-volatile memory layout
-3. `specification/Architecture_Specification.md` — Memory map and power management
+⸻
 
----
+3. Architecture
 
-## 📁 analysis/ — Reverse Engineering
+The firmware follows a layered, decoupled architecture common in high-reliability embedded systems.
 
-**Purpose:** Raw artifacts and analysis from the original Dragino firmware binary
++-----------------------------------------------------------+
+| Application Layer (state machine, AT, calibration, sensor) |
++---------------------------+-------------------------------+
+| LoRaWAN MAC Layer         | Calibration Engine           |
++---------------------------+-------------------------------+
+| Board Support Package (STM32L072 + SX1276)               |
++---------------------------+-------------------------------+
+| System Utilities (timers, uart, spi, fifo, crc32, power) |
++-----------------------------------------------------------+
+| Low-level CMSIS / Startup / Linker / Bootloader interface |
++-----------------------------------------------------------+
 
-| File | Description |
-|------|-------------|
-| `AIS01_overview.md` | High-level summary of binary analysis (memory map, modules, AT commands) |
-| `AIS01_function_analysis.md` | Detailed analysis of 400+ functions extracted from binary |
-| `AIS01_extraction_plan.md` | Reverse engineering roadmap and pending analysis tasks |
-| `AIS01_nvm_map.md` | Non-volatile memory layout (EEPROM shadow regions) |
-| `AIS01_strings.md` | String literals and messages extracted from binary |
-| `AIS01_pointers.csv` | Pointer tables (AT tables, state-machine jumps, radio callbacks) |
-| `AIS01_vectors.csv` | Interrupt vector table with handlers and addresses |
-| `AIS01_AT_commands_legacy.md` | Legacy AT command reference (see specification/ for consolidated version) |
-| `AT_Response_Map_legacy.md` | Legacy response map (consolidated into specification/) |
-| `Firmware_Architecture_Map_legacy.md` | Legacy architecture map (consolidated into specification/) |
-
-**Key Use Cases:**
-- Understanding how the original firmware works at the binary level
-- Finding specific addresses and function implementations
-- Validating assumptions about firmware behavior
-- Reference for string messages to maintain tool compatibility
+Design Principles:
+	•	Small, pure C modules
+	•	Explicit interfaces
+	•	No hidden globals
+	•	Predictable state transitions
+	•	Clean separation between “logic” and “hardware”
 
----
+⸻
 
-## 📁 specification/ — Technical Specifications
+4. Repository Layout
 
-**Purpose:** Consolidated, authoritative technical specifications for the AIS01-LB firmware
+AIS01-Lorawan-EndNode/
+├── src/
+│   ├── app/        # Application logic: AT, state machine, calibration engine
+│   ├── board/      # MCU board support package (GPIO, UART, SPI, RTC, IWDG, SX1276)
+│   ├── cmsis/      # ARM CMSIS + STM32 startup and clocks
+│   ├── lorawan/    # LoRaWAN MAC, crypto, region tables, AU915 implementation
+│   ├── radio/      # SX1276 radio driver
+│   └── system/     # Drivers/utilities: timers, crc32, scheduler, fifo, uart, spi, adc
+├── docs/
+│   ├── firmware/   # Engineering specs, payload mapping, AT dictionary
+│   ├── analysis/   # Reverse-engineering notes of OEM firmware
+│   ├── reports/    # System scans, engineering discussions
+│   └── roadmap/    # Roadmap for v1-lab and future versions
+├── Makefile        # GNU Make build
+└── stm32l072xx_flash_app.ld  # Linker script (app at 0x08004000)
 
-| File | Description |
-|------|-------------|
-| `Architecture_Specification.md` | **Master architecture document** — System design, memory map, module topology, execution flow |
-| `AT_Commands_Specification.md` | **Complete AT command reference** — All 67 commands with syntax, parameters, handlers, and responses |
-| `LoRaWAN_Core_Specification.md` | LoRaWAN stack implementation (AU915 region, join, uplink, downlink, ADR) |
-| `Hardware_Specification.md` | Hardware documentation guide — Datasheets, pinout, component specs, what to download |
 
-**Key Use Cases:**
-- Primary reference for firmware development
-- Understanding system architecture and design decisions
-- AT command integration and validation
-- LoRaWAN stack behavior and compliance
-- Hardware integration planning
-
-**Start Here:** If you're new to the project, read `Architecture_Specification.md` first.
+⸻
 
----
+5. Build System
 
-## 📁 implementation/ — Implementation Guides
+Requirements
+	•	ARM GCC (arm-none-eabi-gcc) 10.x–14.x
+	•	GNU Make
+	•	Optional: Python 3 for automation tooling
 
-**Purpose:** Module-by-module guides for rebuilding/reimplementing the firmware
+Build
 
-| File | Description |
-|------|-------------|
-| `AT_Handlers.md` | AT command parser implementation (table structure, handlers, validation) |
-| `Calibration_Engine.md` | Remote calibration system (downlink opcodes, payload handling, hardware interface) |
-| `Downlink_Dispatcher.md` | Downlink opcode dispatcher and handler routing |
-| `Hardware_Power.md` | Power management and hardware abstraction layer |
-| `Scheduler.md` | Event scheduler and timing management |
+make clean
+make -j4
 
-**Key Use Cases:**
-- Step-by-step guides for implementing each firmware module
-- Understanding handler interactions and data flow
-- Replicating original firmware behavior
-- Integration patterns between modules
+Artifacts produced in build/:
+	•	ais01.bin  → Flashable file (OTA/SWD)
+	•	ais01.elf  → Debuggable image
+	•	ais01.hex  → Alternative flashing format
+	•	.map, .lst files
 
----
+⸻
 
-## 📁 reports/ — Progress Reports
+6. Flashing Instructions
 
-**Purpose:** Analysis reports and system scans
+✔ Dragino OTA Bootloader (Recommended)
+	1.	Run the Dragino OTA Tool
+	2.	Select ais01.bin
+	3.	Flash to address 0x08004000
 
-| File | Description |
-|------|-------------|
-| `20251107_FULL_SYSTEM_SCAN.md` | Full system scan from November 7, 2025 |
-| `ARCHITECTURE.md` | Architecture analysis report (consolidated into specification/) |
-| `HARDWARE_DOCUMENTATION_NEEDED.md` | Hardware documentation status (moved to specification/) |
-| `REMAINING_FEATURES_ANALYSIS.md` | Remaining features to implement/analyze |
+✔ ST-Link (SWD)
 
----
+st-flash write build/ais01.bin 0x08004000
 
-## 📁 prompts/ — Agent Prompts
+✔ Bootloader Compatibility
 
-**Purpose:** Automated analysis prompts for AI agents
+The binary layout respects Dragino’s memory map:
+	•	Bootloader occupies: 0x08000000–0x08003FFF
+	•	Application starts at: 0x08004000
 
-| File | Description |
-|------|-------------|
-| `agent-a.md` | Agent A prompt configuration |
-| `agent-b.md` | Agent B prompt configuration |
+⸻
 
----
+7. AT Command Interface
 
-## Document Relationships
+Detailed specification: docs/firmware/specification/AT_Commands.md
 
-### Cross-Reference Map
+Core Commands
 
-```
-Architecture_Specification.md (MASTER)
-    ├─→ AT_Commands_Specification.md
-    │   └─→ analysis/AIS01_strings.md (response strings)
-    ├─→ LoRaWAN_Core_Specification.md
-    │   └─→ analysis/AIS01_function_analysis.md (binary functions)
-    ├─→ Hardware_Specification.md
-    │   └─→ analysis/AIS01_nvm_map.md (memory layout)
-    └─→ implementation/ modules
-        ├─→ AT_Handlers.md
-        ├─→ Calibration_Engine.md
-        ├─→ Downlink_Dispatcher.md
-        ├─→ Hardware_Power.md
-        └─→ Scheduler.md
+Command	Meaning
+AT	Ping / alive check
+ATZ	Soft reboot
+AT+VER	Firmware version
+AT+FDR	Factory defaults
 
-analysis/AIS01_overview.md
-    ├─→ All analysis/*.csv files
-    └─→ analysis/AIS01_extraction_plan.md
-```
+LoRaWAN Provisioning
 
----
+Command	Description
+AT+DEVEUI=<hex>	Set DevEUI
+AT+APPEUI=<hex>	Set AppEUI
+AT+APPKEY=<hex>	Set AppKey
+AT+JOIN	Initiate OTAA join
 
-## Recommended Reading Order
+Operation & Power
 
-### For Developers (Building New Firmware)
+Command	Description
+AT+TDC=<ms>	Uplink interval
+AT+DR=<n>	DataRate
+AT+ADR=<0/1>	ADR control
+AT+TIMESTAMP=<epoch>	Set timestamp
 
-1. **Day 1 — Architecture Understanding**
-   - `specification/Architecture_Specification.md` (2 hours)
-   - `specification/Hardware_Specification.md` (30 min)
-   - Download datasheets listed in Hardware_Specification.md
+Calibration
 
-2. **Day 2 — LoRaWAN Stack**
-   - `specification/LoRaWAN_Core_Specification.md` (1 hour)
-   - `implementation/Scheduler.md` (30 min)
-   - `implementation/Hardware_Power.md` (30 min)
+Command	Description
+AT+CALIBREMOTE=<payload>	Apply remote calibration block
 
-3. **Day 3 — AT Commands**
-   - `specification/AT_Commands_Specification.md` (1 hour)
-   - `implementation/AT_Handlers.md` (1 hour)
 
-4. **Day 4 — Downlinks & Calibration**
-   - `implementation/Downlink_Dispatcher.md` (30 min)
-   - `implementation/Calibration_Engine.md` (30 min)
+⸻
 
-5. **Day 5+ — Implementation**
-   - Use implementation/ guides as module-by-module references
-   - Cross-reference with analysis/ for binary validation
+8. LoRaWAN Payload Formats (OEM-Aligned)
 
-### For Reverse Engineers (Understanding Original Firmware)
+See: docs/firmware/specification/Payload_Mapping.md
 
-1. **Start Here:**
-   - `analysis/AIS01_overview.md` (30 min overview)
-   - `analysis/AIS01_extraction_plan.md` (roadmap)
+FPORT = 2 — Periodic Reading
 
-2. **Deep Dive:**
-   - `analysis/AIS01_function_analysis.md` (function catalog)
-   - `analysis/AIS01_strings.md` (message strings)
-   - `analysis/AIS01_pointers.csv` + `AIS01_vectors.csv` (tables)
+[0..1]   Battery (mV)
+[2..5]   Unix Timestamp
+[6..9]   Integer reading
+[10..13] Decimal reading (scaled)
+[14]     Detection Mark (0x01 = camera OK)
 
-3. **Cross-Check with Specs:**
-   - Compare findings with `specification/` documents
-   - Validate against `implementation/` guides
+FPORT = 5 — Device Status
 
----
+Model (0x1C)
+Firmware Version
+Frequency Band (AU915 → 0x04)
+Subband
+Battery (mV)
 
-## Key Concepts
+FPORT = 3 — Image Data (Minimal v1)
 
-### Memory Addresses
+Triggered via downlink 0x0B 01.
+Transmits JPEG chunks using OEM header format.
 
-**Important:** Binary dump analyzed covers `0x08000000–0x0801502F`. References to addresses beyond `0x0801xxxx` are external dependencies (bootloader or precompiled libraries).
+⸻
 
-**Flash Layout:**
-- `0x08000000–0x08003FFF`: Bootloader (16 KB, Dragino proprietary)
-- `0x08004000–0x0802FFFF`: Application (176 KB)
-- `0x08080000–0x08080FFF`: Data EEPROM (4 KB)
+9. Calibration Workflow
 
-**RAM Layout:**
-- `0x20000000–0x20003FFF`: Variables + Stack (16 KB)
-- `0x20004000–0x20004FFF`: Heap (4 KB)
+Local Calibration (Recommended)
+	•	PC Tool via UART
+	•	ROI coordinate definition
+	•	Digital wheel and decimal alignment
 
-### AT Command Parser
+Remote Calibration (Minimal v1-Lab)
+	•	Single snapshot calibration payload
+	•	Applied atomically
+	•	Persistence configurable
 
-**Table Location:** `0x08016A06–0x08016A68` (67 entries)
-**Parser Entry:** `FUN_00002000` @ `0x08006000`
+Documentation: docs/firmware/implementation/Calibration_Engine.md
 
-**Structure:**
-```c
-typedef struct {
-    const char *name;           // Command name (without "AT+")
-    ATCmdHandler_t handler;     // Function pointer
-    const char *help;           // Help text pointer
-    uint8_t flags;              // Access flags
-} ATCmdEntry_t;
-```
+⸻
 
-### LoRaWAN Stack
+10. Low-Power综合在线
+	•	STOP mode with RTC wake
+	•	SX1276 powered down when idle
+	•	UART/SPI/I2C/ADC clock gating
+	•	Watchdog-friendly segmented sleeps
 
-**Key Functions:**
-- StackInit: `0x08005214`
-- Join: `0x0800522C`
-- Uplink: `0x08005238`
-- Downlink: `0x08005244`
-- ADR Controller: `0x08005250`
-- RX Scheduler: `0x0800525C`
+Engineering notes: docs/firmware/implementation/Hardware_Power.md
 
-### Power States
+⸻
 
-```c
-POWER_MODE_RUN    // ~1.5 mA (CPU active)
-POWER_MODE_SLEEP  // ~500 µA (WFI)
-POWER_MODE_STOP   // <20 µA (RTC + flash standby)
-```
+11. Roadmap
 
----
+Current roadmap is maintained in:
 
-## External Resources
+docs/roadmap/v1_lab_roadmap.md
 
-### Official Documentation
-- **Dragino Wiki:** http://wiki.dragino.com/xwiki/bin/view/Main/User%20Manual%20for%20LoRaWAN%20End%20Nodes/AIS01-LB--LoRaWAN_AI_Image_End_Node_User_Manual/
-- **GitHub Decoders:** https://github.com/dragino/dragino-end-node-decoder/tree/main/AIS01
+Version 1 (Lab) focuses on:
+	•	AT stability + boot window
+	•	OEM uplink parity (FPORT=2,5)
+	•	Power gating finalization
+	•	Calibration flow reliability
 
-### Datasheets (Download Links in Hardware_Specification.md)
-- **STM32L072CZ:** https://www.st.com/en/microcontrollers-microprocessors/stm32l072cz.html
-- **SX1276:** https://www.semtech.com/products/wireless-rf/lora-core/sx1276
-- **LoRaWAN Spec:** https://lora-alliance.org/resource_hub/lorawan-specification-v1-0-3/
+⸻
 
-### Tools
-- **STM32CubeMX:** https://www.st.com/en/development-tools/stm32cubemx.html (clock/pin config)
-- **Ghidra:** https://ghidra-sre.org/ (reverse engineering)
+12. Documentation
 
----
+All documentation lives under docs/:
 
-## Documentation Maintenance
+Firmware Specifications
 
-### Updating Documentation
+docs/firmware/
 
-1. **Binary Analysis Changes:**
-   - Update files in `analysis/`
-   - Update `analysis/AIS01_extraction_plan.md` with progress
-   - Cross-reference with `specification/` to ensure consistency
+Reverse Engineering Notes
 
-2. **Specification Changes:**
-   - Update master specs in `specification/`
-   - Ensure implementation/ guides reflect changes
-   - Update cross-references in this README
+docs/analysis/, docs/reports/
 
-3. **Implementation Changes:**
-   - Update guides in `implementation/`
-   - Validate against binary in `analysis/`
-   - Update Architecture_Specification.md if needed
+Roadmaps
 
-### Document Status
+docs/roadmap/
 
-| Category | Status | Last Updated |
-|----------|--------|--------------|
-| analysis/ | ✅ Complete | 2025-11-03 |
-| specification/ | ✅ Consolidated | 2025-11-08 |
-| implementation/ | ✅ Complete | 2025-11-03 |
-| reports/ | 🔄 Ongoing | 2025-11-07 |
+⸻
 
----
+13. Development Notes
 
-## Contributing
+For engineering decisions, reversals, rationale, and deep analysis, see:
 
-When adding new documentation:
+docs/reports/
 
-1. **Determine Category:**
-   - Binary analysis → `analysis/`
-   - Technical specification → `specification/`
-   - Implementation guide → `implementation/`
-   - Progress report → `reports/`
+These capture the evolution of the firmware and insights from OEM reverse engineering.
 
-2. **Update Cross-References:**
-   - Add links from related documents
-   - Update this README index
-   - Update Architecture_Specification.md if needed
+⸻
 
-3. **Follow Naming Conventions:**
-   - `analysis/`: Prefix with `AIS01_`
-   - `specification/`: Suffix with `_Specification.md`
-   - `implementation/`: Module name (e.g., `AT_Handlers.md`)
+14. License
 
----
+Internal testing firmware for R&D and evaluation purposes.
 
-## FAQ
+⸻
 
-### Q: Where do I start if I want to build custom firmware?
-**A:** Read `specification/Architecture_Specification.md` first, then follow the "For Developers" reading order above.
+15. Contact
 
-### Q: How do I find a specific AT command implementation?
-**A:** Check `specification/AT_Commands_Specification.md` for the command details and handler address, then reference `implementation/AT_Handlers.md` for implementation guidance.
+Engineering notes, discussions, and historical design records are under:
 
-### Q: What's the difference between analysis/ and specification/?
-**A:**
-- `analysis/` = Raw reverse engineering data from the binary
-- `specification/` = Cleaned, consolidated technical specs for reference
+docs/reports/
 
-### Q: Can I skip the binary analysis files?
-**A:** Yes, if you're only implementing new firmware. Use `specification/` and `implementation/` as your primary references. Refer to `analysis/` only when you need to validate against the original binary.
-
-### Q: Where are the datasheets?
-**A:** Download links are in `specification/Hardware_Specification.md`. Most are free from manufacturer websites.
-
-### Q: How do I maintain compatibility with Dragino tools?
-**A:** Keep response strings identical to the original firmware. See `analysis/AIS01_strings.md` for the complete list and `specification/AT_Commands_Specification.md` for response specifications.
-
----
-
-## Document Change Log
-
-| Date | Change | Files Affected |
-|------|--------|----------------|
-| 2025-11-08 | Consolidated documentation into 3-folder structure | All |
-| 2025-11-08 | Created master specification documents | specification/*.md |
-| 2025-11-08 | Created this README index | README.md |
-| 2025-11-03 | Completed binary analysis | analysis/*.md, analysis/*.csv |
-| 2025-11-03 | Created implementation guides | implementation/*.md |
-
----
-
-**Last Updated:** 2025-11-08
-**Documentation Version:** 2.0 (Consolidated)
+Feel free to explore for detailed technical reasoning behind each subsystem.
