@@ -44,6 +44,7 @@ bool Sensor_UpdateCalibration(uint32_t parameter, uint32_t value);
 const SensorCalibrationState_t *Sensor_GetCalibration(void);
 void Sensor_Process(void);
 bool Sensor_GetFrame(uint8_t *buffer, uint16_t maxLen, uint16_t *actualLen);
+uint8_t Sensor_GetBatteryLevel(void);
 
 #ifdef __cplusplus
 }

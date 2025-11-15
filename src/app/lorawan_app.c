@@ -5,6 +5,8 @@
 #include "storage.h"
 #include "calibration.h"
 #include "atcmd.h"
+#include "sensor.h"
+#include "uplink_encoder.h"
 #include "downlink_dispatcher.h"
 #include <stdio.h>
 
@@ -135,6 +137,95 @@ bool LoRaWANApp_SendUplink(uint8_t *buffer, uint8_t size, uint8_t port, bool con
         return true;
     }
     return false;
+}
+
+static bool LoRaWANApp_SendEncoded(const UplinkPayload_t *payload)
+{
+    if ((payload == NULL) || (payload->buffer == NULL) || (payload->size == 0U))
+    {
+        return false;
+    }
+
+    LoRaWANStatus_t status = LoRaWAN_Send(
+        &g_LoRaCtx,
+        payload->buffer,
+        payload->size,
+        g_Settings.AppPort,
+        g_Settings.MsgType);
+
+    if (status == LORAWAN_STATUS_SUCCESS)
+    {
+        g_AppStatus = LORAWAN_APP_STATE_SENDING;
+        return true;
+    }
+
+    return false;
+}
+
+bool LoRaWANApp_SendStatusUplink(void)
+{
+    uint8_t buffer[16];
+    UplinkPayload_t payload = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+    UplinkStatusContext_t ctx;
+
+    ctx.adrEnabled = (g_Settings.AdrState == LORAWAN_ADR_ON) ? 1U : 0U;
+    ctx.dataRate = g_Settings.DataRate;
+    ctx.txPower = g_Settings.TxPower;
+    ctx.freqBand = g_Settings.SubBand;
+    ctx.rssi = ATCmd_GetLastRSSI();
+    ctx.snr = ATCmd_GetLastSNR();
+    ctx.frameCounterUp = g_Session.FCntUp;
+    ctx.batteryLevel = Sensor_GetBatteryLevel();
+
+    if (!UplinkEncoder_EncodeStatus(&ctx, &payload))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&payload);
+}
+
+bool LoRaWANApp_SendCalibrationUplink(const uint8_t *calData, uint8_t calSize)
+{
+    uint8_t buffer[64];
+    UplinkPayload_t payload = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    if ((calData == NULL) || (calSize == 0U))
+    {
+        return false;
+    }
+
+    if (!UplinkEncoder_EncodeCalibration(calData, calSize, &payload))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&payload);
+}
+
+bool LoRaWANApp_SendDebugUplink(uint8_t fwMajor,
+                                uint8_t fwMinor,
+                                uint8_t fwPatch,
+                                uint8_t loraState)
+{
+    uint8_t buffer[16];
+    UplinkPayload_t payload = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    if (!UplinkEncoder_EncodeDebug(fwMajor, fwMinor, fwPatch, loraState, &payload))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&payload);
 }
 
 void LoRaWANApp_Process(void)

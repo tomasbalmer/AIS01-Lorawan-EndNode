@@ -27,15 +27,14 @@
 
 /* Standard AT Responses (match original firmware) */
 #define ATCMD_RESP_OK               "\r\nOK\r\n"
-#define ATCMD_RESP_ERROR            "AT_ERROR\r\n"
-#define ATCMD_RESP_PARAM_ERROR      "AT_PARAM_ERROR\r\n"
+#define ATCMD_RESP_ERROR            "+ERROR\r\n"
+#define ATCMD_RESP_PARAM_ERROR      "+PARAM_ERROR\r\n"
 #define ATCMD_RESP_BUSY_ERROR       "AT_BUSY_ERROR\r\n"
 #define ATCMD_RESP_NO_NET_JOINED    "AT_NO_NET_JOINED\r\n"
 #define ATCMD_RESP_JOINED           "ABC JOINED\r\n"  /* String at 0x08013349 */
 
 /* TDC Validation (from original firmware at 0x08013A7F) */
 #define TDC_MINIMUM_MS              4000
-#define TDC_ERROR_MSG               "TDC setting needs to be high than 4000ms\r\n"
 
 /* ============================================================================
  * PRIVATE TYPES
@@ -55,8 +54,6 @@ typedef struct
 static char g_CmdBuffer[ATCMD_BUFFER_SIZE];
 static uint16_t g_CmdBufferIndex = 0;
 static bool g_ATCmdInitialized = false;
-static int16_t g_LastRSSI = 0;
-static int8_t g_LastSNR = 0;
 static uint8_t g_PendingDownlink = 0;
 static uint8_t g_LastConfirmedStatus = 0;  /* 0=pending, 1=success, 2=failed */
 static uint32_t g_UTCTimeSeconds = 0;  /* UTC time in seconds since epoch */
@@ -68,6 +65,8 @@ static uint8_t g_LowPowerEnabled = 1;  /* Low power mode enabled */
 static uint8_t g_DutyCycleEnabled = 0;  /* Duty cycle enforcement (AU915 doesn't require it) */
 static uint8_t g_TestModeEnabled = 0;  /* RF test mode status */
 static uint8_t g_LoggingEnabled = 0;  /* Logging enable status */
+static int16_t s_LastRssi = 0;
+static int8_t s_LastSnr = 0;
 
 /* ============================================================================
  * AT COMMAND HANDLERS - PROTOTYPES
@@ -275,6 +274,8 @@ static void ATCmd_ParseCommand(char *cmdLine, int *argc, char *argv[]);
 static uint8_t ATCmd_HexCharToNibble(char c);
 static bool ATCmd_HexStringToBytes(const char *hexStr, uint8_t *bytes, uint8_t len);
 static void ATCmd_BytesToHexString(const uint8_t *bytes, uint8_t len, char *hexStr);
+static ATCmdResult_t ATCmd_ReturnError(void);
+static ATCmdResult_t ATCmd_ReturnParamError(void);
 
 /* ============================================================================
  * PUBLIC FUNCTIONS
@@ -307,6 +308,7 @@ ATCmdResult_t ATCmd_Process(const char *cmdLine)
     char *argv[ATCMD_MAX_ARGS];
     char cmdLineCopy[ATCMD_BUFFER_SIZE];
     strncpy(cmdLineCopy, cmdLine, ATCMD_BUFFER_SIZE - 1);
+    cmdLineCopy[ATCMD_BUFFER_SIZE - 1] = '\0';
     ATCmd_ParseCommand(cmdLineCopy, &argc, argv);
 
     if (argc == 0)
@@ -323,8 +325,7 @@ ATCmdResult_t ATCmd_Process(const char *cmdLine)
         }
     }
 
-    ATCmd_SendResponse("ERROR: Unknown command\r\n");
-    return ATCMD_NOT_FOUND;
+    return ATCmd_ReturnError();
 }
 
 void ATCmd_ProcessChar(uint8_t rxChar)
@@ -334,11 +335,6 @@ void ATCmd_ProcessChar(uint8_t rxChar)
         return;
     }
 
-    /* Echo character if enabled */
-#if AT_ECHO_ENABLED
-    printf("%c", rxChar);
-#endif
-
     /* Handle special characters */
     if (rxChar == '\r' || rxChar == '\n')
     {
@@ -347,14 +343,8 @@ void ATCmd_ProcessChar(uint8_t rxChar)
             g_CmdBuffer[g_CmdBufferIndex] = '\0';
             ATCmdResult_t result = ATCmd_Process(g_CmdBuffer);
 
-            if (result == ATCMD_OK)
-            {
-                ATCmd_SendResponse("OK\r\n");
-            }
-            else if (result != ATCMD_NOT_FOUND)
-            {
-                ATCmd_SendResponse("ERROR\r\n");
-            }
+            /* Handler prints its own responses (OEM Mode). */
+            (void)result;
 
             g_CmdBufferIndex = 0;
             memset(g_CmdBuffer, 0, ATCMD_BUFFER_SIZE);
@@ -394,14 +384,36 @@ void ATCmd_SendFormattedResponse(const char *format, ...)
     ATCmd_SendResponse(buffer);
 }
 
+static ATCmdResult_t ATCmd_ReturnError(void)
+{
+    ATCmd_SendResponse(ATCMD_RESP_ERROR);
+    return ATCMD_ERROR;
+}
+
+static ATCmdResult_t ATCmd_ReturnParamError(void)
+{
+    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
+    return ATCMD_ERROR;
+}
+
 void ATCmd_UpdateRSSI(int16_t rssi)
 {
-    g_LastRSSI = rssi;
+    s_LastRssi = rssi;
 }
 
 void ATCmd_UpdateSNR(int8_t snr)
 {
-    g_LastSNR = snr;
+    s_LastSnr = snr;
+}
+
+int16_t ATCmd_GetLastRSSI(void)
+{
+    return s_LastRssi;
+}
+
+int8_t ATCmd_GetLastSNR(void)
+{
+    return s_LastSnr;
 }
 
 void ATCmd_UpdatePendingDownlink(uint8_t pending)
@@ -432,8 +444,8 @@ static ATCmdResult_t ATCmd_HandleVersion(int argc, char *argv[])
 
 static ATCmdResult_t ATCmd_HandleReset(int argc, char *argv[])
 {
-    ATCmd_SendResponse("Resetting...\r\n");
-    HAL_Delay(100);
+    ATCmd_SendResponse("+RESET\r\n");
+    HAL_Delay(200);
     NVIC_SystemReset();
     return ATCMD_OK;
 }
@@ -443,11 +455,10 @@ static ATCmdResult_t ATCmd_HandleFactoryReset(int argc, char *argv[])
     StorageStatus_t status = Storage_FactoryReset();
     if (status == STORAGE_OK || status == STORAGE_FACTORY_RESET)
     {
-        ATCmd_SendResponse("Factory reset successful\r\n");
+        ATCmd_SendResponse(ATCMD_RESP_OK);
         return ATCMD_OK;
     }
-    ATCmd_SendResponse("Factory reset failed\r\n");
-    return ATCMD_ERROR;
+    return ATCmd_ReturnError();
 }
 
 static ATCmdResult_t ATCmd_HandleDevEUI(int argc, char *argv[])
@@ -468,7 +479,7 @@ static ATCmdResult_t ATCmd_HandleDevEUI(int argc, char *argv[])
         /* Set DevEUI */
         if (strlen(argv[1]) != 16)
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
         if (ATCmd_HexStringToBytes(argv[1], storage.DevEui, 8))
         {
@@ -476,7 +487,7 @@ static ATCmdResult_t ATCmd_HandleDevEUI(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleAppEUI(int argc, char *argv[])
@@ -495,7 +506,7 @@ static ATCmdResult_t ATCmd_HandleAppEUI(int argc, char *argv[])
     {
         if (strlen(argv[1]) != 16)
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
         if (ATCmd_HexStringToBytes(argv[1], storage.AppEui, 8))
         {
@@ -503,7 +514,7 @@ static ATCmdResult_t ATCmd_HandleAppEUI(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleAppKey(int argc, char *argv[])
@@ -522,7 +533,7 @@ static ATCmdResult_t ATCmd_HandleAppKey(int argc, char *argv[])
     {
         if (strlen(argv[1]) != 32)
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
         if (ATCmd_HexStringToBytes(argv[1], storage.AppKey, 16))
         {
@@ -530,7 +541,7 @@ static ATCmdResult_t ATCmd_HandleAppKey(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleJoin(int argc, char *argv[])
@@ -544,8 +555,7 @@ static ATCmdResult_t ATCmd_HandleJoin(int argc, char *argv[])
         /* ABP mode - activate session without sending Join Request */
         if (storage.DevAddr == 0)
         {
-            ATCmd_SendResponse("ABP mode: DevAddr not configured\r\n");
-            return ATCMD_ERROR;
+            return ATCmd_ReturnError();
         }
 
         /* Session is already active in ABP mode (activated in LoRaWANApp_Init) */
@@ -561,8 +571,7 @@ static ATCmdResult_t ATCmd_HandleJoin(int argc, char *argv[])
             ATCmd_SendResponse(ATCMD_RESP_OK);
             return ATCMD_OK;
         }
-        ATCmd_SendResponse(ATCMD_RESP_ERROR);
-        return ATCMD_ERROR;
+        return ATCmd_ReturnError();
     }
 }
 
@@ -586,7 +595,7 @@ static ATCmdResult_t ATCmd_HandleADR(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleDataRate(int argc, char *argv[])
@@ -609,7 +618,7 @@ static ATCmdResult_t ATCmd_HandleDataRate(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleTxPower(int argc, char *argv[])
@@ -632,7 +641,7 @@ static ATCmdResult_t ATCmd_HandleTxPower(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleTDC(int argc, char *argv[])
@@ -654,8 +663,7 @@ static ATCmdResult_t ATCmd_HandleTDC(int argc, char *argv[])
         /* Validate minimum TDC (from original firmware) */
         if (value < TDC_MINIMUM_MS)
         {
-            ATCmd_SendResponse(TDC_ERROR_MSG);
-            return ATCMD_ERROR;
+            return ATCmd_ReturnParamError();
         }
 
         storage.TxDutyCycle = value;
@@ -664,8 +672,7 @@ static ATCmdResult_t ATCmd_HandleTDC(int argc, char *argv[])
         return ATCMD_OK;
     }
 
-    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-    return ATCMD_ERROR;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandlePort(int argc, char *argv[])
@@ -688,7 +695,7 @@ static ATCmdResult_t ATCmd_HandlePort(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleConfirmed(int argc, char *argv[])
@@ -711,7 +718,7 @@ static ATCmdResult_t ATCmd_HandleConfirmed(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleRX2DR(int argc, char *argv[])
@@ -731,7 +738,7 @@ static ATCmdResult_t ATCmd_HandleRX2DR(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleRX2FQ(int argc, char *argv[])
@@ -751,7 +758,7 @@ static ATCmdResult_t ATCmd_HandleRX2FQ(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleFreqBand(int argc, char *argv[])
@@ -767,14 +774,14 @@ static ATCmdResult_t ATCmd_HandleFreqBand(int argc, char *argv[])
     else if (argc == 2)
     {
         int value = atoi(argv[1]);
-        if (value >= 1 && value <= 9)
+        if ((value == 1) || (value == 2))
         {
             storage.FreqBand = value;
             Storage_Save(&storage);
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleBattery(int argc, char *argv[])
@@ -800,8 +807,7 @@ static ATCmdResult_t ATCmd_HandleCalibRemote(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     const char *hexPayload = argv[1];
@@ -809,22 +815,19 @@ static ATCmdResult_t ATCmd_HandleCalibRemote(int argc, char *argv[])
 
     if ((hexLen == 0U) || (hexLen % 2U) != 0U)
     {
-        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint8_t payloadLen = (uint8_t)(hexLen / 2U);
     if (payloadLen > CALIBRATION_BUFFER_SIZE)
     {
-        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint8_t payload[CALIBRATION_BUFFER_SIZE];
     if (!ATCmd_HexStringToBytes(hexPayload, payload, payloadLen))
     {
-        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint8_t response[CALIBRATION_BUFFER_SIZE];
@@ -832,8 +835,7 @@ static ATCmdResult_t ATCmd_HandleCalibRemote(int argc, char *argv[])
 
     if (!Calibration_ProcessDownlink(payload, payloadLen, response, &responseSize))
     {
-        ATCmd_SendResponse(ATCMD_RESP_ERROR);
-        return ATCMD_ERROR;
+        return ATCmd_ReturnError();
     }
 
     if (responseSize > 0U)
@@ -854,12 +856,17 @@ static ATCmdResult_t ATCmd_HandleCalibRemote(int argc, char *argv[])
 static void ATCmd_ParseCommand(char *cmdLine, int *argc, char *argv[])
 {
     *argc = 0;
-    char *token = strtok(cmdLine, "=, ");
+    argv[(*argc)++] = cmdLine;
 
-    while (token != NULL && *argc < ATCMD_MAX_ARGS)
+    char *eq = strchr(cmdLine, '=');
+    if (eq != NULL)
     {
-        argv[(*argc)++] = token;
-        token = strtok(NULL, "=, ");
+        *eq = '\0';
+        argv[0] = cmdLine;
+        if (*argc < ATCMD_MAX_ARGS)
+        {
+            argv[(*argc)++] = eq + 1;
+        }
     }
 }
 
@@ -919,8 +926,7 @@ static ATCmdResult_t ATCmd_HandleNetworkJoinMode(int argc, char *argv[])
         int mode = atoi(argv[1]);
         if (mode != 0 && mode != 1)
         {
-            ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-            return ATCMD_ERROR;
+            return ATCmd_ReturnParamError();
         }
         storageData.JoinMode = (uint8_t)mode;
         Storage_Save(&storageData);
@@ -928,8 +934,7 @@ static ATCmdResult_t ATCmd_HandleNetworkJoinMode(int argc, char *argv[])
         return ATCMD_OK;
     }
 
-    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-    return ATCMD_ERROR;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleNwkSKey(int argc, char *argv[])
@@ -950,16 +955,14 @@ static ATCmdResult_t ATCmd_HandleNwkSKey(int argc, char *argv[])
         /* SET */
         if (!ATCmd_HexStringToBytes(argv[1], storageData.NwkSKey, 16))
         {
-            ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-            return ATCMD_ERROR;
+            return ATCmd_ReturnParamError();
         }
         Storage_Save(&storageData);
         ATCmd_SendResponse(ATCMD_RESP_OK);
         return ATCMD_OK;
     }
 
-    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-    return ATCMD_ERROR;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleAppSKey(int argc, char *argv[])
@@ -980,16 +983,14 @@ static ATCmdResult_t ATCmd_HandleAppSKey(int argc, char *argv[])
         /* SET */
         if (!ATCmd_HexStringToBytes(argv[1], storageData.AppSKey, 16))
         {
-            ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-            return ATCMD_ERROR;
+            return ATCmd_ReturnParamError();
         }
         Storage_Save(&storageData);
         ATCmd_SendResponse(ATCMD_RESP_OK);
         return ATCMD_OK;
     }
 
-    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-    return ATCMD_ERROR;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleDevAddr(int argc, char *argv[])
@@ -1009,8 +1010,7 @@ static ATCmdResult_t ATCmd_HandleDevAddr(int argc, char *argv[])
         uint8_t addrBytes[4];
         if (!ATCmd_HexStringToBytes(argv[1], addrBytes, 4))
         {
-            ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-            return ATCMD_ERROR;
+            return ATCmd_ReturnParamError();
         }
         storageData.DevAddr = ((uint32_t)addrBytes[0] << 24) |
                               ((uint32_t)addrBytes[1] << 16) |
@@ -1021,8 +1021,7 @@ static ATCmdResult_t ATCmd_HandleDevAddr(int argc, char *argv[])
         return ATCMD_OK;
     }
 
-    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-    return ATCMD_ERROR;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleDisableFrameCounterCheck(int argc, char *argv[])
@@ -1042,8 +1041,7 @@ static ATCmdResult_t ATCmd_HandleDisableFrameCounterCheck(int argc, char *argv[]
         int value = atoi(argv[1]);
         if (value != 0 && value != 1)
         {
-            ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-            return ATCMD_ERROR;
+            return ATCmd_ReturnParamError();
         }
         storageData.DisableFrameCounterCheck = (uint8_t)value;
         Storage_Save(&storageData);
@@ -1051,8 +1049,7 @@ static ATCmdResult_t ATCmd_HandleDisableFrameCounterCheck(int argc, char *argv[]
         return ATCMD_OK;
     }
 
-    ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-    return ATCMD_ERROR;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleNetworkJoinStatus(int argc, char *argv[])
@@ -1060,8 +1057,7 @@ static ATCmdResult_t ATCmd_HandleNetworkJoinStatus(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        ATCmd_SendResponse(ATCMD_RESP_PARAM_ERROR);
-        return ATCMD_ERROR;
+        return ATCmd_ReturnParamError();
     }
 
     /* Query LoRaWAN stack for join status */
@@ -1093,7 +1089,7 @@ static ATCmdResult_t ATCmd_HandleRX1DL(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleRX2DL(int argc, char *argv[])
@@ -1115,7 +1111,7 @@ static ATCmdResult_t ATCmd_HandleRX2DL(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleJRX1DL(int argc, char *argv[])
@@ -1137,7 +1133,7 @@ static ATCmdResult_t ATCmd_HandleJRX1DL(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleJRX2DL(int argc, char *argv[])
@@ -1159,7 +1155,7 @@ static ATCmdResult_t ATCmd_HandleJRX2DL(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 /* ============================================================================
@@ -1174,7 +1170,7 @@ static ATCmdResult_t ATCmd_HandleFrameCounterUp(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     ATCmd_SendFormattedResponse("+FCU: %lu\r\n", storage.FrameCounterUp);
@@ -1189,7 +1185,7 @@ static ATCmdResult_t ATCmd_HandleFrameCounterDown(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     ATCmd_SendFormattedResponse("+FCD: %lu\r\n", storage.FrameCounterDown);
@@ -1205,10 +1201,10 @@ static ATCmdResult_t ATCmd_HandleRSSI(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
-    ATCmd_SendFormattedResponse("+RSSI: %d\r\n", g_LastRSSI);
+    ATCmd_SendFormattedResponse("+RSSI:%d\r\n", s_LastRssi);
     return ATCMD_OK;
 }
 
@@ -1217,10 +1213,10 @@ static ATCmdResult_t ATCmd_HandleSNR(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
-    ATCmd_SendFormattedResponse("+SNR: %d\r\n", g_LastSNR);
+    ATCmd_SendFormattedResponse("+SNR:%d\r\n", s_LastSnr);
     return ATCMD_OK;
 }
 
@@ -1258,14 +1254,14 @@ static ATCmdResult_t ATCmd_HandleClass(int argc, char *argv[])
         }
         else
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
 
         storage.DeviceClass = classValue;
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleRecv(int argc, char *argv[])
@@ -1273,7 +1269,7 @@ static ATCmdResult_t ATCmd_HandleRecv(int argc, char *argv[])
     /* Read-only command to check for pending downlink */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     ATCmd_SendFormattedResponse("+RECV: %d\r\n", g_PendingDownlink);
@@ -1302,7 +1298,7 @@ static ATCmdResult_t ATCmd_HandleRetry(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleRetryDelay(int argc, char *argv[])
@@ -1324,7 +1320,7 @@ static ATCmdResult_t ATCmd_HandleRetryDelay(int argc, char *argv[])
         Storage_Save(&storage);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 /* ============================================================================
@@ -1335,7 +1331,7 @@ static ATCmdResult_t ATCmd_HandleSend(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Check if joined */
@@ -1351,12 +1347,12 @@ static ATCmdResult_t ATCmd_HandleSend(int argc, char *argv[])
 
     if (payloadLen > LORAWAN_APP_DATA_BUFFER_MAX_SIZE || strlen(argv[1]) % 2 != 0)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     if (!ATCmd_HexStringToBytes(argv[1], payload, payloadLen))
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Get current settings */
@@ -1370,14 +1366,14 @@ static ATCmdResult_t ATCmd_HandleSend(int argc, char *argv[])
         return ATCMD_OK;
     }
 
-    return ATCMD_ERROR;
+    return ATCmd_ReturnError();
 }
 
 static ATCmdResult_t ATCmd_HandleSendBinary(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Check if joined */
@@ -1388,13 +1384,13 @@ static ATCmdResult_t ATCmd_HandleSendBinary(int argc, char *argv[])
     }
 
     /* Convert ASCII string to binary payload */
-    uint8_t *payload = (uint8_t *)argv[1];
+    uint8_t payload[LORAWAN_APP_DATA_BUFFER_MAX_SIZE];
     uint8_t payloadLen = strlen(argv[1]);
-
     if (payloadLen > LORAWAN_APP_DATA_BUFFER_MAX_SIZE)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
+    memcpy(payload, argv[1], payloadLen);
 
     /* Get current settings */
     StorageData_t storage;
@@ -1407,7 +1403,7 @@ static ATCmdResult_t ATCmd_HandleSendBinary(int argc, char *argv[])
         return ATCMD_OK;
     }
 
-    return ATCMD_ERROR;
+    return ATCmd_ReturnError();
 }
 
 static ATCmdResult_t ATCmd_HandleConfirmedMode(int argc, char *argv[])
@@ -1421,10 +1417,10 @@ static ATCmdResult_t ATCmd_HandleConfirmedStatus(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
-    ATCmd_SendFormattedResponse("+CFS: %d\r\n", g_LastConfirmedStatus);
+    ATCmd_SendFormattedResponse("+CFS:%d\r\n", g_LastConfirmedStatus);
     return ATCMD_OK;
 }
 
@@ -1443,7 +1439,7 @@ static ATCmdResult_t ATCmd_HandleTimeRequest(int argc, char *argv[])
     /* Read-only command to request time sync from network */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Check if joined */
@@ -1454,7 +1450,7 @@ static ATCmdResult_t ATCmd_HandleTimeRequest(int argc, char *argv[])
     }
 
     /* Send DeviceTimeReq MAC command (would be implemented in LoRaWAN stack) */
-    ATCmd_SendResponse("Time sync request sent\r\n");
+    ATCmd_SendResponse("+TIMEREQ:OK\r\n");
     return ATCMD_OK;
 }
 
@@ -1463,7 +1459,7 @@ static ATCmdResult_t ATCmd_HandleLocalTime(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Get local time from HAL (uptime in seconds) */
@@ -1487,7 +1483,7 @@ static ATCmdResult_t ATCmd_HandleUTC(int argc, char *argv[])
         g_UTCTimeSeconds = utc;
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 /* ============================================================================
@@ -1509,20 +1505,20 @@ static ATCmdResult_t ATCmd_HandleChannelEnable(int argc, char *argv[])
         g_ChannelMask = mask;
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleChannelSingle(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     int channel = atoi(argv[1]);
     if (channel < 0 || channel > 71)  /* AU915 has 72 channels (0-71) */
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     if (argc == 2)
@@ -1546,24 +1542,24 @@ static ATCmdResult_t ATCmd_HandleChannelSingle(int argc, char *argv[])
         }
         else
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleChannel(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     int channel = atoi(argv[1]);
     if (channel < 0 || channel > 71)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* For AU915, show channel frequency and DR range */
@@ -1595,7 +1591,7 @@ static ATCmdResult_t ATCmd_HandleBandPlan(int argc, char *argv[])
         return ATCMD_OK;
     }
     /* SET not implemented - region is fixed */
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleChannelMask(int argc, char *argv[])
@@ -1613,7 +1609,7 @@ static ATCmdResult_t ATCmd_HandleTemperature(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Get temperature from MCU (STM32L0 has internal temp sensor) */
@@ -1621,7 +1617,7 @@ static ATCmdResult_t ATCmd_HandleTemperature(int argc, char *argv[])
     /* For now, return a placeholder value */
     int16_t temp = 25;  /* Would read from ADC in real implementation */
 
-    ATCmd_SendFormattedResponse("+TEMP: %d\r\n", temp);
+    ATCmd_SendFormattedResponse("+TEMP:%d\r\n", temp);
     return ATCMD_OK;
 }
 
@@ -1630,14 +1626,14 @@ static ATCmdResult_t ATCmd_HandleVoltage(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* Get VDD from internal reference (VREFINT) */
     /* Would use ADC to measure VREFINT and calculate VDD */
     uint16_t vdd_mv = 3300;  /* Placeholder: 3.3V */
 
-    ATCmd_SendFormattedResponse("+VDD: %d\r\n", vdd_mv);
+    ATCmd_SendFormattedResponse("+VDD:%d\r\n", vdd_mv);
     return ATCMD_OK;
 }
 
@@ -1646,7 +1642,7 @@ static ATCmdResult_t ATCmd_HandleChipID(int argc, char *argv[])
     /* Read-only command */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     /* STM32 Unique ID is 96 bits (12 bytes) at address 0x1FF80050 */
@@ -1661,9 +1657,9 @@ static ATCmdResult_t ATCmd_HandleSleep(int argc, char *argv[])
     if (argc < 2)
     {
         /* No parameter - enter sleep immediately */
-        ATCmd_SendResponse("Entering sleep mode\r\n");
         HAL_Delay(100);  /* Allow UART to finish */
         /* Would call low-power sleep function here */
+        ATCmd_SendResponse(ATCMD_RESP_OK);
         return ATCMD_OK;
     }
     else if (argc == 2)
@@ -1673,10 +1669,10 @@ static ATCmdResult_t ATCmd_HandleSleep(int argc, char *argv[])
         ATCmd_SendFormattedResponse("Sleeping for %lu ms\r\n", duration);
         HAL_Delay(100);  /* Allow UART to finish */
         HAL_Delay(duration);  /* Sleep duration */
-        ATCmd_SendResponse("Awake\r\n");
+        ATCmd_SendResponse(ATCMD_RESP_OK);
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleWakeup(int argc, char *argv[])
@@ -1694,7 +1690,7 @@ static ATCmdResult_t ATCmd_HandleWakeup(int argc, char *argv[])
         g_WakeupInterval = interval;
         return ATCMD_OK;
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandlePlatformData(int argc, char *argv[])
@@ -1713,14 +1709,14 @@ static ATCmdResult_t ATCmd_HandlePlatformData(int argc, char *argv[])
         uint8_t len = strlen(argv[1]) / 2;
         if (len > 32 || strlen(argv[1]) % 2 != 0)
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
         if (ATCmd_HexStringToBytes(argv[1], g_PlatformData, len))
         {
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleUserSettings(int argc, char *argv[])
@@ -1739,14 +1735,14 @@ static ATCmdResult_t ATCmd_HandleUserSettings(int argc, char *argv[])
         uint8_t len = strlen(argv[1]) / 2;
         if (len > 32 || strlen(argv[1]) % 2 != 0)
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
         if (ATCmd_HexStringToBytes(argv[1], g_UserSettings, len))
         {
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 /* ============================================================================
@@ -1757,16 +1753,15 @@ static ATCmdResult_t ATCmd_HandleSensorInit(int argc, char *argv[])
 {
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     if (!Sensor_Init())
     {
-        ATCmd_SendResponse("Sensor initialization failed\r\n");
-        return ATCMD_ERROR;
+        return ATCmd_ReturnError();
     }
 
-    ATCmd_SendResponse("AIS01_LB Detected\r\n");
+    ATCmd_SendResponse("+SENSORINIT:OK\r\n");
     return ATCMD_OK;
 }
 
@@ -1774,13 +1769,12 @@ static ATCmdResult_t ATCmd_HandleSensorRead(int argc, char *argv[])
 {
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     if (!Sensor_IsInitialized())
     {
-        ATCmd_SendResponse("Sensor not initialized\r\n");
-        return ATCMD_ERROR;
+        return ATCmd_ReturnError();
     }
 
     SensorSample_t sample;
@@ -1788,8 +1782,7 @@ static ATCmdResult_t ATCmd_HandleSensorRead(int argc, char *argv[])
     {
         if (!Sensor_GetLastSample(&sample))
         {
-            ATCmd_SendResponse("Sensor read failed\r\n");
-            return ATCMD_ERROR;
+            return ATCmd_ReturnError();
         }
     }
 
@@ -1803,8 +1796,7 @@ static ATCmdResult_t ATCmd_HandleSensorCalibrate(int argc, char *argv[])
 {
     if (!Sensor_IsInitialized())
     {
-        ATCmd_SendResponse("Sensor not initialized\r\n");
-        return ATCMD_ERROR;
+        return ATCmd_ReturnError();
     }
 
     if (argc == 1)
@@ -1820,27 +1812,26 @@ static ATCmdResult_t ATCmd_HandleSensorCalibrate(int argc, char *argv[])
         uint32_t parameter = strtoul(argv[1], &end, 0);
         if ((end == NULL) || (*end != '\0'))
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
 
         end = NULL;
         uint32_t value = strtoul(argv[2], &end, 0);
         if ((end == NULL) || (*end != '\0'))
         {
-            return ATCMD_INVALID_PARAM;
+            return ATCmd_ReturnParamError();
         }
 
         if (!Sensor_UpdateCalibration(parameter, value))
         {
-            ATCmd_SendResponse("Calibration update failed\r\n");
-            return ATCMD_ERROR;
+            return ATCmd_ReturnError();
         }
 
         ATCmd_SendResponse("Set after calibration time or take effect after ATZ\r\n");
         return ATCMD_OK;
     }
 
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleSensorMode(int argc, char *argv[])
@@ -1858,7 +1849,7 @@ static ATCmdResult_t ATCmd_HandleSensorMode(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleSensorPower(int argc, char *argv[])
@@ -1875,10 +1866,9 @@ static ATCmdResult_t ATCmd_HandleSensorPower(int argc, char *argv[])
         {
             if (!Sensor_SetPower(false))
             {
-                ATCmd_SendResponse("Sensor power change failed\r\n");
-                return ATCMD_ERROR;
+                return ATCmd_ReturnError();
             }
-            ATCmd_SendResponse("Sensor powered off\r\n");
+            ATCmd_SendResponse(ATCMD_RESP_OK);
             return ATCMD_OK;
         }
         else if (power == 1)
@@ -1887,20 +1877,18 @@ static ATCmdResult_t ATCmd_HandleSensorPower(int argc, char *argv[])
             {
                 if (!Sensor_Init())
                 {
-                    ATCmd_SendResponse("Sensor initialization failed\r\n");
-                    return ATCMD_ERROR;
+                    return ATCmd_ReturnError();
                 }
             }
             else if (!Sensor_SetPower(true))
             {
-                ATCmd_SendResponse("Sensor power change failed\r\n");
-                return ATCMD_ERROR;
+                return ATCmd_ReturnError();
             }
-            ATCmd_SendResponse("Sensor powered on\r\n");
+            ATCmd_SendResponse(ATCMD_RESP_OK);
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 /* ============================================================================
@@ -1925,7 +1913,7 @@ static ATCmdResult_t ATCmd_HandleLowPower(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleDutyCycle(int argc, char *argv[])
@@ -1946,7 +1934,7 @@ static ATCmdResult_t ATCmd_HandleDutyCycle(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleLinkCheck(int argc, char *argv[])
@@ -1954,7 +1942,7 @@ static ATCmdResult_t ATCmd_HandleLinkCheck(int argc, char *argv[])
     /* Request link check from network */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     if (!LoRaWANApp_IsJoined())
@@ -1964,7 +1952,7 @@ static ATCmdResult_t ATCmd_HandleLinkCheck(int argc, char *argv[])
     }
 
     /* Send LinkCheckReq MAC command */
-    ATCmd_SendResponse("Link check requested\r\n");
+    ATCmd_SendResponse(ATCMD_RESP_OK);
     return ATCMD_OK;
 }
 
@@ -1973,7 +1961,7 @@ static ATCmdResult_t ATCmd_HandleTestTxCW(int argc, char *argv[])
     /* TX continuous wave for testing */
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint32_t freq = (uint32_t)atoi(argv[1]);
@@ -1986,7 +1974,7 @@ static ATCmdResult_t ATCmd_HandleTestTxCW(int argc, char *argv[])
 static ATCmdResult_t ATCmd_HandleTestConfig(int argc, char *argv[])
 {
     /* Configure test mode parameters */
-    ATCmd_SendResponse("Test configuration updated\r\n");
+    ATCmd_SendResponse(ATCMD_RESP_OK);
     return ATCMD_OK;
 }
 
@@ -1995,11 +1983,11 @@ static ATCmdResult_t ATCmd_HandleTestOff(int argc, char *argv[])
     /* Disable test mode */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     g_TestModeEnabled = 0;
-    ATCmd_SendResponse("Test mode disabled\r\n");
+    ATCmd_SendResponse(ATCMD_RESP_OK);
     return ATCMD_OK;
 }
 
@@ -2008,11 +1996,11 @@ static ATCmdResult_t ATCmd_HandleTestOn(int argc, char *argv[])
     /* Enable test mode */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     g_TestModeEnabled = 1;
-    ATCmd_SendResponse("Test mode enabled\r\n");
+    ATCmd_SendResponse(ATCMD_RESP_OK);
     return ATCMD_OK;
 }
 
@@ -2021,7 +2009,7 @@ static ATCmdResult_t ATCmd_HandleTestTone(int argc, char *argv[])
     /* Transmit tone for testing */
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint32_t freq = (uint32_t)atoi(argv[1]);
@@ -2036,7 +2024,7 @@ static ATCmdResult_t ATCmd_HandleTestRx(int argc, char *argv[])
     /* Test RX mode */
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint32_t freq = (uint32_t)atoi(argv[1]);
@@ -2049,7 +2037,7 @@ static ATCmdResult_t ATCmd_HandleTestTx(int argc, char *argv[])
     /* Test TX mode */
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint32_t freq = (uint32_t)atoi(argv[1]);
@@ -2064,7 +2052,7 @@ static ATCmdResult_t ATCmd_HandleTestRSSI(int argc, char *argv[])
     /* Test RSSI measurement */
     if (argc < 2)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
     uint32_t freq = (uint32_t)atoi(argv[1]);
@@ -2092,26 +2080,21 @@ static ATCmdResult_t ATCmd_HandleLog(int argc, char *argv[])
             return ATCMD_OK;
         }
     }
-    return ATCMD_INVALID_PARAM;
+    return ATCmd_ReturnParamError();
 }
 
 static ATCmdResult_t ATCmd_HandleHelp(int argc, char *argv[])
 {
-    /* List all available commands */
     if (argc != 1)
     {
-        return ATCMD_INVALID_PARAM;
+        return ATCmd_ReturnParamError();
     }
 
-    ATCmd_SendResponse("\r\n=== Available AT Commands ===\r\n\r\n");
-
+    ATCmd_SendResponse("+HELP\r\n");
     for (uint32_t i = 0; i < ATCMD_TABLE_SIZE; i++)
     {
-        ATCmd_SendFormattedResponse("%-20s - %s\r\n",
-            g_ATCmdTable[i].name,
-            g_ATCmdTable[i].help);
+        ATCmd_SendFormattedResponse("%s\r\n", g_ATCmdTable[i].name);
     }
-
-    ATCmd_SendFormattedResponse("\r\nTotal commands: %lu\r\n\r\n", ATCMD_TABLE_SIZE);
+    ATCmd_SendResponse("OK\r\n");
     return ATCMD_OK;
 }

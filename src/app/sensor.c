@@ -1,6 +1,7 @@
 #include "sensor.h"
 #include "config.h"
 #include "sensor-board.h"
+#include "board.h"
 #include "hal_stubs.h"
 #include "timer.h"
 #include <limits.h>
@@ -336,6 +337,11 @@ bool Sensor_GetFrame(uint8_t *buffer, uint16_t maxLen, uint16_t *actualLen)
     }
 
     return true;
+}
+
+uint8_t Sensor_GetBatteryLevel(void)
+{
+    return BoardGetBatteryLevel();
 }
 
 void Sensor_ResetCalibration(void)
