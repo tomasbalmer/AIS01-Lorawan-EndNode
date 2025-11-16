@@ -1,28 +1,27 @@
 # AT Command Specification  
-## AIS01-LB Custom Firmware
+## AIS01-LB Custom Firmware (Authoritative)
 
-This document defines the **complete, authoritative AT command surface**  
-implemented by the custom AIS01-LB firmware.
+This document defines the FULL AT command surface implemented  
+by the AIS01-LB custom firmware.  
 
-OEM AT commands **DO NOT APPLY** unless explicitly documented.
+Everything in `docs/legacy/` is OEM and NOT applicable.
 
 ---
 
-# 1. Command Format
-
-All commands follow:
+# 1. General Format
 
 ```
 AT+<CMD>[=<value>]
+AT+<CMD>?
 ```
 
 Responses:
 - `OK`
+- `<value>`
 - `AT_ERROR`
 - `AT_PARAM_ERROR`
 - `AT_BUSY_ERROR`
 - `AT_NO_NET_JOINED`
-- `<value>` (when querying)
 
 ---
 
@@ -30,8 +29,7 @@ Responses:
 
 ## 2.1 Ping
 ```
-AT
-→ OK
+AT → OK
 ```
 
 ## 2.2 Version
@@ -42,65 +40,65 @@ AT+VER
 
 ---
 
-# 3. LoRaWAN Credentials
+# 3. Credentials (OTAA)
 
-## 3.1 Device EUI
+## DevEUI
 ```
-AT+DEVEUI=<16 hex>
+AT+DEVEUI=<16 HEX>
 AT+DEVEUI?
 ```
 
-## 3.2 Application EUI
+## AppEUI
 ```
-AT+APPEUI=<16 hex>
+AT+APPEUI=<16 HEX>
 AT+APPEUI?
 ```
 
-## 3.3 Application Key
+## AppKey
 ```
-AT+APPKEY=<32 hex>
+AT+APPKEY=<32 HEX>
 AT+APPKEY?
 ```
 
-## 3.4 Join
+## Join
 ```
 AT+JOIN
 ```
 
-Triggers OTAA join.  
-Errors:
-- `AT_BUSY_ERROR`
-- `AT_NO_NET_JOINED` (when querying status)
+States:
+- success → `OK`
+- busy → `AT_BUSY_ERROR`
+- network not joined → `AT_NO_NET_JOINED` (status queries)
 
 ---
 
-# 4. Session / Network Parameters
+# 4. LoRaWAN Parameters
 
-## 4.1 ADR
+## ADR
 ```
 AT+ADR=<0|1>
 AT+ADR?
 ```
 
-## 4.2 Data Rate
+## Data Rate
 ```
 AT+DR=<0-15>
 AT+DR?
 ```
 
-## 4.3 TX Power
+## TX Power
 ```
 AT+TXP=<0-5>
 AT+TXP?
 ```
 
-## 4.4 Port
+## Application Port
 ```
-AT+PORT=<1-223>
+AT+PORT=<1..223>
 AT+PORT?
 ```
 
-## 4.5 Uplink interval (ms)
+## TX Interval (ms)
 ```
 AT+TDC=<ms>
 AT+TDC?
@@ -110,63 +108,64 @@ AT+TDC?
 
 # 5. Calibration
 
-## 5.1 Remote Calibration Command
+## Remote Calibration
 ```
-AT+CALIBREMOTE=<hex>
+AT+CALIBREMOTE=<hex-payload>
 AT+CALIBREMOTE?
 ```
 
-- Validates the calibration payload  
-- Writes to NVMM  
-- Schedules a calibration ACK uplink  
+Behavior:
+- validates payload  
+- applies calibration to RAM  
+- persists to NVMM  
+- schedules calibration ACK uplink  
+
+Errors:
+- `AT_PARAM_ERROR`
+- `AT_BUSY_ERROR`
 
 ---
 
-# 6. System Commands
+# 6. System
 
-## 6.1 Reset
+### Reset
 ```
 ATZ
 ```
 
-## 6.2 Read Unique ID
+### Unique ID
 ```
 AT+UUID
 ```
 
-## 6.3 Read battery voltage
-(optional if implemented in your code)
+### Optional: Battery Voltage
+(only if implemented in source)
 ```
 AT+BAT?
 ```
 
 ---
 
-# 7. Optional / Debug
+# 7. Extended / Debug
 
-## 7.1 Debug mode
 ```
 AT+DEBUG=<0|1>
 ```
 
-Prints extended logs.
+Enables extra log output.
 
 ---
 
-# 8. Errors
+# 8. Error Table
 
 | Error | Meaning |
-|--------|---------|
+|-------|---------|
 | `AT_ERROR` | Unknown command |
-| `AT_PARAM_ERROR` | bad parameter |
-| `AT_BUSY_ERROR` | System busy (TX/RX or join in progress) |
-| `AT_NO_NET_JOINED` | Action requires join first |
+| `AT_PARAM_ERROR` | Invalid parameter |
+| `AT_BUSY_ERROR` | System busy (TX, RX or join) |
+| `AT_NO_NET_JOINED` | Requires join |
 
 ---
 
-# 9. Source of Truth
-
-This document corresponds directly to:  
-`src/app/atcmd.c`
-
-Any command not listed here is considered unsupported.
+# Source of Truth
+This document mirrors the implementation in `src/app/atcmd.c`.
