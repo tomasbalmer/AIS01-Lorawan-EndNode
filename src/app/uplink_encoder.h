@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "sensor.h"
+#include "mac_mirror.h"
 
 typedef struct
 {
@@ -155,5 +156,19 @@ typedef struct
  */
 bool UplinkEncoder_EncodeStatusEx(const UplinkStatusExContext_t *ctx,
                                   UplinkPayload_t *out);
+
+typedef struct
+{
+    uint8_t payload[MAC_MIRROR_MAX_SIZE];
+    uint8_t size;
+} UplinkMacMirrorContext_t;
+
+/*
+ * MAC-MIRROR FRAME FORMAT:
+ * Byte 0  : 0xF2
+ * Byte 1..N : raw MAC command bytes
+ */
+bool UplinkEncoder_EncodeMacMirror(const UplinkMacMirrorContext_t *ctx,
+                                   UplinkPayload_t *out);
 
 #endif /* UPLINK_ENCODER_H */

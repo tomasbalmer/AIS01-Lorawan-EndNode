@@ -10,6 +10,7 @@
 #include "downlink_dispatcher.h"
 #include "board.h"
 #include "hal_stubs.h"
+#include "mac_mirror.h"
 #include <stdio.h>
 
 static LoRaWANAppState_t g_AppStatus = LORAWAN_APP_STATE_IDLE;
@@ -322,6 +323,33 @@ bool LoRaWANApp_SendStatusExUplink(void)
     return LoRaWANApp_SendEncoded(&p);
 }
 
+bool LoRaWANApp_SendMacMirrorUplink(void)
+{
+    MacMirrorFrame_t frame;
+
+    if (!MacMirror_GetLast(&frame))
+    {
+        return false;
+    }
+
+    uint8_t buffer[32];
+    UplinkPayload_t payload = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    UplinkMacMirrorContext_t ctx;
+    memcpy(ctx.payload, frame.buffer, frame.size);
+    ctx.size = frame.size;
+
+    if (!UplinkEncoder_EncodeMacMirror(&ctx, &payload))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&payload);
+}
+
 void LoRaWANApp_Process(void)
 {
     LoRaWAN_Process(&g_LoRaCtx);
@@ -403,7 +431,6 @@ static bool Downlink_ProcessCalibration(const uint8_t *payload, uint8_t size)
 
 static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t rssi, int8_t snr)
 {
-    (void)port;
 
     /* Update RSSI and SNR for AT commands */
     ATCmd_UpdateRSSI(rssi);
@@ -423,6 +450,11 @@ static void OnRxData(const uint8_t *buffer, uint8_t size, uint8_t port, int16_t 
         .setDataRate = Downlink_SetDataRate,
         .setTxPower = Downlink_SetTxPower,
         .processCalibration = Downlink_ProcessCalibration};
+
+    if ((port == 0U) && (size > 0U))
+    {
+        MacMirror_StoreRx(buffer, size);
+    }
 
     Downlink_Handle(buffer, size, &ctx, &actions);
 }

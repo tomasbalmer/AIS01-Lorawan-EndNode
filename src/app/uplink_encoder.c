@@ -230,3 +230,25 @@ bool UplinkEncoder_EncodeStatusEx(const UplinkStatusExContext_t *ctx,
     out->size = required;
     return true;
 }
+
+bool UplinkEncoder_EncodeMacMirror(const UplinkMacMirrorContext_t *ctx,
+                                   UplinkPayload_t *out)
+{
+    if ((ctx == NULL) || (ctx->size == 0U) || (ctx->size > MAC_MIRROR_MAX_SIZE))
+    {
+        return false;
+    }
+
+    uint8_t required = (uint8_t)(1U + ctx->size);
+
+    if (!UplinkEncoder_CheckBuffer(out, required))
+    {
+        return false;
+    }
+
+    out->buffer[0] = 0xF2U;
+    memcpy(&out->buffer[1], ctx->payload, ctx->size);
+    out->size = required;
+
+    return true;
+}

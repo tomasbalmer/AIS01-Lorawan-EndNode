@@ -60,35 +60,40 @@ extern "C"
     /*!
      * \brief Sends a status uplink using the OEM formatter
      */
-bool LoRaWANApp_SendStatusUplink(void);
+    bool LoRaWANApp_SendStatusUplink(void);
 
-/*!
- * \brief Sends a calibration uplink with raw calibration data
- */
-bool LoRaWANApp_SendCalibrationUplink(const uint8_t *calData, uint8_t calSize);
+    /*!
+     * \brief Sends a calibration uplink with raw calibration data
+     */
+    bool LoRaWANApp_SendCalibrationUplink(const uint8_t *calData, uint8_t calSize);
 
-/*!
- * \brief Sends a debug uplink frame
- */
-bool LoRaWANApp_SendDebugUplink(uint8_t fwMajor,
-                                uint8_t fwMinor,
-                                uint8_t fwPatch,
-                                uint8_t loraState);
+    /*!
+     * \brief Sends a debug uplink frame
+     */
+    bool LoRaWANApp_SendDebugUplink(uint8_t fwMajor,
+                                    uint8_t fwMinor,
+                                    uint8_t fwPatch,
+                                    uint8_t loraState);
 
-/*!
- * \brief Sends a sensor uplink using the OEM frame format
- */
-bool LoRaWANApp_SendSensorUplink(void);
+    /*!
+     * \brief Sends a sensor uplink using the OEM frame format
+     */
+    bool LoRaWANApp_SendSensorUplink(void);
 
-/*!
- * \brief Sends an OEM Sensor-Stats uplink frame
- */
-bool LoRaWANApp_SendSensorStatsUplink(void);
+    /*!
+     * \brief Sends an OEM Sensor-Stats uplink frame
+     */
+    bool LoRaWANApp_SendSensorStatsUplink(void);
 
-/*!
- * \brief Sends an Expanded OEM Status uplink frame
- */
-bool LoRaWANApp_SendStatusExUplink(void);
+    /*!
+     * \brief Sends an Expanded OEM Status uplink frame
+     */
+    bool LoRaWANApp_SendStatusExUplink(void);
+
+    /*!
+     * \brief Sends an OEM MAC-mirror uplink frame
+     */
+    bool LoRaWANApp_SendMacMirrorUplink(void);
 
     /*!
      * \brief Processes LoRaMAC events (must be called in main loop)

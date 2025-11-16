@@ -14,6 +14,7 @@
 #include "board.h"
 #include "stm32l072xx.h"
 #include "hal_stubs.h"
+#include "mac_mirror.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -116,6 +117,9 @@ static ATCmdResult_t ATCmd_HandleSensorUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleDebugUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleStatusExUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleSensorStatsUplink(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleMacCmd(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleMacStat(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleMacMirrorUp(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedMode(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedStatus(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleAppPort(int argc, char *argv[]);
@@ -219,6 +223,9 @@ static const ATCmdEntry_t g_ATCmdTable[] = {
     { "AT+DEBUGUP", ATCmd_HandleDebugUplink, "Send debug uplink frame" },
     { "AT+STATUSEXUP", ATCmd_HandleStatusExUplink, "Send expanded status uplink" },
     { "AT+SENSORSTATSUP", ATCmd_HandleSensorStatsUplink, "Send sensor-stats uplink" },
+    { "AT+MACCMD", ATCmd_HandleMacCmd, "Send raw MAC cmd uplink (hex)" },
+    { "AT+MACSTAT", ATCmd_HandleMacStat, "Get last MAC command" },
+    { "AT+MACUP", ATCmd_HandleMacMirrorUp, "Send MAC-mirror uplink" },
 
     /* Time Synchronization */
     { "AT+TIMEREQ", ATCmd_HandleTimeRequest, "Request time synchronization" },
@@ -1545,6 +1552,86 @@ static ATCmdResult_t ATCmd_HandleSensorStatsUplink(int argc, char *argv[])
     }
 
     if (!LoRaWANApp_SendSensorStatsUplink())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandleMacCmd(int argc, char *argv[])
+{
+    if (argc < 2)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        ATCmd_SendResponse(ATCMD_RESP_NO_NET_JOINED);
+        return ATCMD_ERROR;
+    }
+
+    const char *hex = argv[1];
+    size_t hexLen = strlen(hex);
+
+    if ((hexLen == 0U) || ((hexLen % 2U) != 0U))
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    uint8_t size = (uint8_t)(hexLen / 2U);
+    if ((size == 0U) || (size > MAC_MIRROR_MAX_SIZE))
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    uint8_t buf[MAC_MIRROR_MAX_SIZE];
+    if (!ATCmd_HexStringToBytes(hex, buf, size))
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    MacMirror_StoreRx(buf, size);
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandleMacStat(int argc, char *argv[])
+{
+    if (argc != 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    MacMirrorFrame_t frame;
+    if (!MacMirror_GetLast(&frame))
+    {
+        ATCmd_SendResponse("+MACSTAT:EMPTY\r\n");
+        return ATCMD_OK;
+    }
+
+    char hex[(MAC_MIRROR_MAX_SIZE * 2) + 2];
+    ATCmd_BytesToHexString(frame.buffer, frame.size, hex);
+
+    ATCmd_SendFormattedResponse("+MACSTAT:%s\r\n", hex);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandleMacMirrorUp(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        ATCmd_SendResponse(ATCMD_RESP_NO_NET_JOINED);
+        return ATCMD_ERROR;
+    }
+
+    if (!LoRaWANApp_SendMacMirrorUplink())
     {
         return ATCmd_ReturnError();
     }
