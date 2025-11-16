@@ -114,6 +114,8 @@ static ATCmdResult_t ATCmd_HandleSendBinary(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleStatusUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleSensorUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleDebugUplink(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleStatusExUplink(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandleSensorStatsUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedMode(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedStatus(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleAppPort(int argc, char *argv[]);
@@ -215,6 +217,8 @@ static const ATCmdEntry_t g_ATCmdTable[] = {
     { "AT+STATUSUP", ATCmd_HandleStatusUplink, "Send status uplink frame" },
     { "AT+SENSORUP", ATCmd_HandleSensorUplink, "Send sensor uplink frame" },
     { "AT+DEBUGUP", ATCmd_HandleDebugUplink, "Send debug uplink frame" },
+    { "AT+STATUSEXUP", ATCmd_HandleStatusExUplink, "Send expanded status uplink" },
+    { "AT+SENSORSTATSUP", ATCmd_HandleSensorStatsUplink, "Send sensor-stats uplink" },
 
     /* Time Synchronization */
     { "AT+TIMEREQ", ATCmd_HandleTimeRequest, "Request time synchronization" },
@@ -420,6 +424,11 @@ int16_t ATCmd_GetLastRSSI(void)
 int8_t ATCmd_GetLastSNR(void)
 {
     return s_LastSnr;
+}
+
+uint8_t ATCmd_GetPendingDownlink(void)
+{
+    return g_PendingDownlink;
 }
 
 void ATCmd_UpdatePendingDownlink(uint8_t pending)
@@ -1506,6 +1515,44 @@ static ATCmdResult_t ATCmd_HandleDebugUplink(int argc, char *argv[])
     return ATCMD_OK;
 }
 
+static ATCmdResult_t ATCmd_HandleStatusExUplink(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    if (!LoRaWANApp_SendStatusExUplink())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandleSensorStatsUplink(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    if (!LoRaWANApp_SendSensorStatsUplink())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
 /* ============================================================================
  * TIME SYNCHRONIZATION HANDLERS
  * ========================================================================== */
@@ -1882,18 +1929,12 @@ static ATCmdResult_t ATCmd_HandleSensorCalibrate(int argc, char *argv[])
         return ATCMD_OK;
     }
 
-    if (argc == 3)
+    if ((argc == 2) && (argv[1] != NULL))
     {
-        char *end = NULL;
-        uint32_t parameter = strtoul(argv[1], &end, 0);
-        if ((end == NULL) || (*end != '\0'))
-        {
-            return ATCmd_ReturnParamError();
-        }
+        uint32_t parameter = 0U;
+        uint32_t value = 0U;
 
-        end = NULL;
-        uint32_t value = strtoul(argv[2], &end, 0);
-        if ((end == NULL) || (*end != '\0'))
+        if (sscanf(argv[1], "%lu,%lu", &parameter, &value) != 2)
         {
             return ATCmd_ReturnParamError();
         }
@@ -2035,15 +2076,22 @@ static ATCmdResult_t ATCmd_HandleLinkCheck(int argc, char *argv[])
 static ATCmdResult_t ATCmd_HandleTestTxCW(int argc, char *argv[])
 {
     /* TX continuous wave for testing */
-    if (argc < 2)
+    if ((argc != 2) || (argv[1] == NULL))
     {
         return ATCmd_ReturnParamError();
     }
 
-    uint32_t freq = (uint32_t)atoi(argv[1]);
-    uint8_t power = (argc >= 3) ? (uint8_t)atoi(argv[2]) : 14;
+    uint32_t freq = 0U;
+    uint32_t power = 14U;
+    int parsed = sscanf(argv[1], "%lu,%lu", &freq, &power);
+    if (parsed < 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
 
-    ATCmd_SendFormattedResponse("TX CW: freq=%lu Hz, power=%d dBm\r\n", freq, power);
+    ATCmd_SendFormattedResponse("TX CW: freq=%lu Hz, power=%lu dBm\r\n",
+                                (unsigned long)freq,
+                                (unsigned long)power);
     return ATCMD_OK;
 }
 
@@ -2083,58 +2131,84 @@ static ATCmdResult_t ATCmd_HandleTestOn(int argc, char *argv[])
 static ATCmdResult_t ATCmd_HandleTestTone(int argc, char *argv[])
 {
     /* Transmit tone for testing */
-    if (argc < 2)
+    if ((argc != 2) || (argv[1] == NULL))
     {
         return ATCmd_ReturnParamError();
     }
 
-    uint32_t freq = (uint32_t)atoi(argv[1]);
-    uint16_t duration = (argc >= 3) ? (uint16_t)atoi(argv[2]) : 1000;
+    uint32_t freq = 0U;
+    uint32_t duration = 1000U;
+    int parsed = sscanf(argv[1], "%lu,%lu", &freq, &duration);
+    if (parsed < 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
 
-    ATCmd_SendFormattedResponse("TX Tone: freq=%lu Hz, duration=%d ms\r\n", freq, duration);
+    ATCmd_SendFormattedResponse("TX Tone: freq=%lu Hz, duration=%lu ms\r\n",
+                                (unsigned long)freq,
+                                (unsigned long)duration);
     return ATCMD_OK;
 }
 
 static ATCmdResult_t ATCmd_HandleTestRx(int argc, char *argv[])
 {
     /* Test RX mode */
-    if (argc < 2)
+    if ((argc != 2) || (argv[1] == NULL))
     {
         return ATCmd_ReturnParamError();
     }
 
-    uint32_t freq = (uint32_t)atoi(argv[1]);
-    ATCmd_SendFormattedResponse("RX Test mode: freq=%lu Hz\r\n", freq);
+    uint32_t freq = 0U;
+    if (sscanf(argv[1], "%lu", &freq) != 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    ATCmd_SendFormattedResponse("RX Test mode: freq=%lu Hz\r\n", (unsigned long)freq);
     return ATCMD_OK;
 }
 
 static ATCmdResult_t ATCmd_HandleTestTx(int argc, char *argv[])
 {
     /* Test TX mode */
-    if (argc < 2)
+    if ((argc != 2) || (argv[1] == NULL))
     {
         return ATCmd_ReturnParamError();
     }
 
-    uint32_t freq = (uint32_t)atoi(argv[1]);
-    uint8_t power = (argc >= 3) ? (uint8_t)atoi(argv[2]) : 14;
+    uint32_t freq = 0U;
+    uint32_t power = 14U;
+    int parsed = sscanf(argv[1], "%lu,%lu", &freq, &power);
+    if (parsed < 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
 
-    ATCmd_SendFormattedResponse("TX Test mode: freq=%lu Hz, power=%d dBm\r\n", freq, power);
+    ATCmd_SendFormattedResponse("TX Test mode: freq=%lu Hz, power=%lu dBm\r\n",
+                                (unsigned long)freq,
+                                (unsigned long)power);
     return ATCMD_OK;
 }
 
 static ATCmdResult_t ATCmd_HandleTestRSSI(int argc, char *argv[])
 {
     /* Test RSSI measurement */
-    if (argc < 2)
+    if ((argc != 2) || (argv[1] == NULL))
     {
         return ATCmd_ReturnParamError();
     }
 
-    uint32_t freq = (uint32_t)atoi(argv[1]);
+    uint32_t freq = 0U;
+    if (sscanf(argv[1], "%lu", &freq) != 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
     int16_t rssi = -80;  /* Placeholder value */
 
-    ATCmd_SendFormattedResponse("+TRSSI: freq=%lu Hz, RSSI=%d dBm\r\n", freq, rssi);
+    ATCmd_SendFormattedResponse("+TRSSI: freq=%lu Hz, RSSI=%d dBm\r\n",
+                                (unsigned long)freq,
+                                rssi);
     return ATCMD_OK;
 }
 

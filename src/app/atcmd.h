@@ -87,6 +87,11 @@ extern "C"
     int8_t ATCmd_GetLastSNR(void);
 
     /*!
+     * \brief Gets pending downlink indicator (0/1)
+     */
+    uint8_t ATCmd_GetPendingDownlink(void);
+
+    /*!
      * \brief Updates pending downlink status
      * \param [in] pending Number of pending downlinks
      */

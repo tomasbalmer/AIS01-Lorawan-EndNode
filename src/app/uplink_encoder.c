@@ -146,3 +146,87 @@ bool UplinkEncoder_EncodeSensorFrame(const SensorSample_t *sample,
     out->size = requiredSize;
     return true;
 }
+
+bool UplinkEncoder_EncodeSensorStats(const UplinkSensorStatsContext_t *ctx,
+                                     UplinkPayload_t *out)
+{
+    const uint8_t required = 21U;
+    if ((ctx == NULL) || !UplinkEncoder_CheckBuffer(out, required))
+    {
+        return false;
+    }
+
+    uint8_t *b = out->buffer;
+    b[0] = 0x03U;
+    b[1] = ctx->batteryLevel;
+    b[2] = ctx->motionState;
+    b[3] = ctx->occupancyState;
+    b[4] = ctx->sensorMode;
+
+    b[5] = (uint8_t)(ctx->primaryMin & 0xFFU);
+    b[6] = (uint8_t)((ctx->primaryMin >> 8) & 0xFFU);
+    b[7] = (uint8_t)(ctx->primaryAvg & 0xFFU);
+    b[8] = (uint8_t)((ctx->primaryAvg >> 8) & 0xFFU);
+    b[9] = (uint8_t)(ctx->primaryMax & 0xFFU);
+    b[10] = (uint8_t)((ctx->primaryMax >> 8) & 0xFFU);
+
+    b[11] = (uint8_t)(ctx->secondaryMin & 0xFFU);
+    b[12] = (uint8_t)((ctx->secondaryMin >> 8) & 0xFFU);
+    b[13] = (uint8_t)(ctx->secondaryAvg & 0xFFU);
+    b[14] = (uint8_t)((ctx->secondaryAvg >> 8) & 0xFFU);
+    b[15] = (uint8_t)(ctx->secondaryMax & 0xFFU);
+    b[16] = (uint8_t)((ctx->secondaryMax >> 8) & 0xFFU);
+
+    uint32_t ts = ctx->timestampMs;
+    b[17] = (uint8_t)(ts & 0xFFU);
+    b[18] = (uint8_t)((ts >> 8) & 0xFFU);
+    b[19] = (uint8_t)((ts >> 16) & 0xFFU);
+    b[20] = (uint8_t)((ts >> 24) & 0xFFU);
+
+    out->size = required;
+    return true;
+}
+
+bool UplinkEncoder_EncodeStatusEx(const UplinkStatusExContext_t *ctx,
+                                  UplinkPayload_t *out)
+{
+    const uint8_t required = 21U;
+    if ((ctx == NULL) || !UplinkEncoder_CheckBuffer(out, required))
+    {
+        return false;
+    }
+
+    uint8_t *b = out->buffer;
+
+    b[0] = 0xF1U;
+    b[1] = ctx->batteryLevel;
+    b[2] = ctx->adrEnabled;
+    b[3] = ctx->dataRate;
+    b[4] = ctx->txPower;
+    b[5] = ctx->freqBand;
+
+    b[6] = (uint8_t)(ctx->batteryMv & 0xFFU);
+    b[7] = (uint8_t)((ctx->batteryMv >> 8) & 0xFFU);
+
+    b[8] = ctx->sensorPowered;
+    b[9] = ctx->sensorMode;
+    b[10] = ctx->pendingDl;
+
+    b[11] = (uint8_t)ctx->rssi;
+    b[12] = (uint8_t)ctx->snr;
+
+    uint32_t up = ctx->uptimeSec;
+    b[13] = (uint8_t)(up & 0xFFU);
+    b[14] = (uint8_t)((up >> 8) & 0xFFU);
+    b[15] = (uint8_t)((up >> 16) & 0xFFU);
+    b[16] = (uint8_t)((up >> 24) & 0xFFU);
+
+    uint32_t fcnt = ctx->frameCounterUp;
+    b[17] = (uint8_t)(fcnt & 0xFFU);
+    b[18] = (uint8_t)((fcnt >> 8) & 0xFFU);
+    b[19] = (uint8_t)((fcnt >> 16) & 0xFFU);
+    b[20] = (uint8_t)((fcnt >> 24) & 0xFFU);
+
+    out->size = required;
+    return true;
+}

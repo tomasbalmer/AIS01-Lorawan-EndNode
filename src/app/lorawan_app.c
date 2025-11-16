@@ -8,6 +8,8 @@
 #include "sensor.h"
 #include "uplink_encoder.h"
 #include "downlink_dispatcher.h"
+#include "board.h"
+#include "hal_stubs.h"
 #include <stdio.h>
 
 static LoRaWANAppState_t g_AppStatus = LORAWAN_APP_STATE_IDLE;
@@ -258,6 +260,66 @@ bool LoRaWANApp_SendSensorUplink(void)
     }
 
     return LoRaWANApp_SendEncoded(&payload);
+}
+
+bool LoRaWANApp_SendSensorStatsUplink(void)
+{
+    uint8_t buffer[32];
+    UplinkPayload_t p = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    UplinkSensorStatsContext_t ctx = {
+        .batteryLevel = Sensor_GetBatteryLevel(),
+        .primaryMin = 0U,
+        .primaryAvg = 0U,
+        .primaryMax = 0U,
+        .secondaryMin = 0U,
+        .secondaryAvg = 0U,
+        .secondaryMax = 0U,
+        .motionState = 0U,
+        .occupancyState = 0U,
+        .sensorMode = (uint8_t)Sensor_GetMode(),
+        .timestampMs = HAL_GetTick()};
+
+    if (!UplinkEncoder_EncodeSensorStats(&ctx, &p))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&p);
+}
+
+bool LoRaWANApp_SendStatusExUplink(void)
+{
+    uint8_t buffer[32];
+    UplinkPayload_t p = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    UplinkStatusExContext_t ctx = {
+        .adrEnabled = (g_Settings.AdrState == LORAWAN_ADR_ON) ? 1U : 0U,
+        .dataRate = g_Settings.DataRate,
+        .txPower = g_Settings.TxPower,
+        .freqBand = g_Settings.SubBand,
+        .rssi = ATCmd_GetLastRSSI(),
+        .snr = ATCmd_GetLastSNR(),
+        .batteryLevel = Sensor_GetBatteryLevel(),
+        .batteryMv = BoardGetBatteryLevel(), /* Placeholder until real mV routine */
+        .sensorPowered = Sensor_IsPowered() ? 1U : 0U,
+        .sensorMode = (uint8_t)Sensor_GetMode(),
+        .uptimeSec = HAL_GetTick() / 1000U,
+        .frameCounterUp = g_Session.FCntUp,
+        .pendingDl = ATCmd_GetPendingDownlink()};
+
+    if (!UplinkEncoder_EncodeStatusEx(&ctx, &p))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&p);
 }
 
 void LoRaWANApp_Process(void)
