@@ -104,12 +104,12 @@
 
 ---
 
-### 2. **Bootloader Dragino (0x08000000–0x08003FFF)**
+### 2. **Bootloader Dragino (0x08000000–0x0800EFFF)**
 **Estado:** ⚠️ Binario propietario, protocolo parcialmente documentado
 
 **Lo que sabes:**
 - OTA update vía Dragino Sensor Manager (UART)
-- App offset: 0x08004000 (16 KB bootloader)
+- App offset: 0x0800F000 (56 KB bootloader)
 - Flash process: OK (documentado en wiki)
 
 **Lo que falta:**

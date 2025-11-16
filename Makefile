@@ -158,7 +158,7 @@ clean:
 
 # Flash (using STM32_Programmer_CLI or st-flash)
 flash: all
-	@echo "Flash using: st-flash write $(BUILD_DIR)/$(PROJECT).bin 0x08004000"
-	st-flash write $(BUILD_DIR)/$(PROJECT).bin 0x08004000
+	@echo "Flash using: st-flash write $(BUILD_DIR)/$(PROJECT).bin 0x0800F000"
+	st-flash write $(BUILD_DIR)/$(PROJECT).bin 0x0800F000
 
 .PHONY: all clean flash

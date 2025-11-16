@@ -69,11 +69,11 @@ extern "C"
  * ========================================================================== */
 /* Bootloader protection: Application starts at offset for OTA Tool compatibility
  * Memory Map:
- *   0x08000000 - 0x0800CFFF (52KB)  : OTA Bootloader v1.4
- *   0x0800D000 - 0x0803EFFF (200KB) : Application (this firmware)
+ *   0x08000000 - 0x0800EFFF (56KB)  : OTA Bootloader v1.4
+ *   0x0800F000 - 0x0803EFFF (200KB) : Application (this firmware)
  *   0x0803F000 - 0x0803FFFF (4KB)   : OTA Metadata (CRC, version, flags) - DO NOT WRITE
  */
-#define APP_FLASH_ORIGIN 0x0800D000 /* 52KB offset (OTA bootloader v1.4) */
+#define APP_FLASH_ORIGIN 0x0800F000 /* 56KB offset (OTA bootloader v1.4) */
 #define APP_FLASH_SIZE (200 * 1024) /* 200KB for application */
 #define OTA_METADATA_START 0x0803F000 /* OTA metadata region start - PROTECTED */
 #define OTA_METADATA_END 0x0803FFFF   /* OTA metadata region end */

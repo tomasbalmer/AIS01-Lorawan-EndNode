@@ -52,13 +52,18 @@ The firmware is designed as a modular state machine for ultra-low-power LoRaWAN 
 
 ## Memory Map
 
-### Flash Layout (192 KB)
+### Memory Map (Updated — OEM Verified via Reverse Engineering)
 
-| Address Range | Size | Purpose |
-|---------------|------|---------|
-| `0x08000000–0x08003FFF` | 16 KB | Bootloader (Dragino proprietary, preserved) |
-| `0x08004000–0x0802FFFF` | 176 KB | Application firmware |
-| `0x08080000–0x08080FFF` | 4 KB | Data EEPROM (config + keys) |
+The actual OEM firmware (AU915) uses the following layout:
+
+| Region       | Start       | End         | Notes                              |
+|--------------|-------------|-------------|------------------------------------|
+| Bootloader   | 0x08000000  | 0x0800EFFF  | OEM OTA Bootloader v1.4            |
+| Application  | 0x0800F000  | End of flash| Reset_Handler at 0x0800F30D        |
+| Vector Table | 0x0800F000  | —           | Application interrupt vectors      |
+| Data EEPROM  | 0x08080000  | 0x08080FFF  | Configuration + keys (unchanged)   |
+
+This firmware adopts **the same application offset (`0x0800F000`)** for full consistency.
 
 **Note:** Binary dump analyzed covers `0x08000000–0x0801502F`. References to `0x0801xxxx+` are external dependencies (bootloader or precompiled libraries).
 
@@ -116,7 +121,7 @@ The firmware is designed as a modular state machine for ultra-low-power LoRaWAN 
 
 | Module | Address Range | Key Entry Points | Reference Doc |
 |--------|---------------|------------------|---------------|
-| **Boot & Main State Machine** | `0x08004000–0x080051FF` | Reset vector (`0x0800F30D`), state dispatcher (`FUN_0000F28C`) | `implementation/` modules |
+| **Boot & Main State Machine** | `0x0800F000–0x080101FF` | Reset vector (`0x0800F30D`), state dispatcher (`FUN_0000F28C`) | `implementation/` modules |
 | **LoRaWAN Core** | `0x08005214–0x08005B68` | StackInit (`0x00001214`), Join (`0x0000122C`), Uplink (`0x00001238`), Downlink (`0x00001244`) | `specification/LoRaWAN_Core_Specification.md` |
 | **AT Command Layer** | `0x08006000–0x080064A4` | Parser (`0x00002000`), Handlers (`0x08006030+`) | `specification/AT_Commands_Specification.md` |
 | **Hardware & Power** | `0x08007000–0x0800742C` | Init (`0x00003000`), STOP mode (`0x00003018`), Storage (`0x00003030`), Calibration (`0x00003060`) | `implementation/Hardware_Power.md`, `implementation/Calibration_Engine.md` |
@@ -385,19 +390,19 @@ Downlink (opcodes 0x01,0x21,0xA0) → Dispatcher (0x08005244) →
 
 **Vector Table Relocation:**
 
-Firmware starts at `0x08004000` to preserve Dragino bootloader.
+Firmware starts at `0x0800F000` to preserve Dragino bootloader.
 
 **Linker Script:**
 ```ld
 MEMORY {
-  FLASH (rx) : ORIGIN = 0x08004000, LENGTH = 176K
+  FLASH (rx) : ORIGIN = 0x0800F000, LENGTH = 0x31000
   RAM (rwx)  : ORIGIN = 0x20000000, LENGTH = 20K
 }
 ```
 
 **System Init:**
 ```c
-#define VECT_TAB_OFFSET  0x4000
+#define VECT_TAB_OFFSET  0xF000
 SCB->VTOR = FLASH_BASE | VECT_TAB_OFFSET;
 ```
 

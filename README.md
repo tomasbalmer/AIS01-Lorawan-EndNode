@@ -9,7 +9,7 @@ Custom firmware for the Dragino AIS01-LB (STM32L072CZ + SX1276) replacing the OE
 - **Remote calibration**: AT command `AT+CALIBREMOTE` and downlink opcode `0xA0`
 - **Low power**: STOP mode + RTC wake-up, SX1276 power gating (<20 µA target)
 - **Storage**: EEPROM emulation with CRC32 validation for credentials and settings
-- **Tooling**: GNU make + `arm-none-eabi-gcc`, outputs at application offset `0x08004000`
+- **Tooling**: GNU make + `arm-none-eabi-gcc`, outputs at application offset `0x0800F000`
 
 ## Quick Start
 
@@ -23,12 +23,18 @@ Artifacts are written to `build/`, notably `build/ais01.bin` (≈50 KB).
 
 ### 2. Flash the device
 
-Use the Dragino OTA Tool and select `build/ais01.bin` (application offset `0x08004000`).
+Use the Dragino OTA Tool and select `build/ais01.bin` (application offset `0x0800F000`).
 
-For SWD flashing you can run:
+### Flashing the firmware (updated for OEM-aligned memory layout)
+The application offset has been aligned with the OEM firmware:
 
+**Application Base Address:** `0x0800F000`  
+**Bootloader OEM Region:**   `0x08000000 – 0x0800EFFF`  
+**Vector Table:**            `0x0800F000`
+
+Flash command:
 ```bash
-st-flash write build/ais01.bin 0x08004000
+st-flash write build/ais01.bin 0x0800F000
 ```
 
 ### 3. Open the serial console
@@ -70,7 +76,7 @@ AIS01-Lorawan-EndNode/
 │   └── system/       # Portable utilities (timers, fifo, nvmm, HAL stubs)
 ├── docs/             # Specs, RE notes, test plans
 ├── Makefile          # Build system (PROJECT=ais01)
-└── stm32l072xx_flash_app.ld  # Linker script with 0x08004000 app offset
+└── stm32l072xx_flash_app.ld  # Linker script with 0x0800F000 app offset
 ```
 
 ## Requirements

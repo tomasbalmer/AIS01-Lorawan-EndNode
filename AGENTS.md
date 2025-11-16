@@ -24,7 +24,7 @@ The firmware will be based on **LoRaMAC-node** (Semtech open-source stack) and c
 | UART Interface | AT Commands / Debug |
 | RTC | External LSE crystal, used for low power timing |
 | Power Supply | 3.6 V Li-SOCl₂ battery |
-| Bootloader | Dragino proprietary (preserve it, app offset: `0x08004000`) |
+| Bootloader | Dragino proprietary (preserve it, app offset: `0x0800F000`) |
 | LoRaWAN Region | AU915 – Sub-Band 2 (Channels 8–15) |
 | LoRaWAN Class | Class A OTAA |
 | Target Sleep Current | < 10 µA in STOP mode |

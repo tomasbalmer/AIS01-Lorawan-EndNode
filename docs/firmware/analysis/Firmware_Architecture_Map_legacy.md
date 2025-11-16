@@ -2,7 +2,7 @@
 
 | Module | Address Range | Key Entry Points | Linked Doc |
 |--------|---------------|------------------|------------|
-| Boot & Main State Machine | `0x08004000–0x080051FF` | Reset vector (`0x0800F30D`), state dispatcher (Loop around `FUN_0000F28C`) | Existing: `docs/ARCHITECTURE.md` |
+| Boot & Main State Machine | `0x0800F000–0x080101FF` | Reset vector (`0x0800F30D`), state dispatcher (Loop around `FUN_0000F28C`) | Existing: `docs/ARCHITECTURE.md` |
 | LoRaWAN Core | `0x08005214–0x08005B68` | `FUN_00001214` (StackInit), `FUN_0000122C` (Join), `FUN_00001238` (Uplink), `FUN_00001244` (Downlink) | `docs/rebuild/Lorawan_Core.md` |
 | AT Command Layer | `0x08006000–0x080064A4` | `FUN_00002000` (Parser), `FUN_00002030` (`AT+JOIN`), `FUN_0000203C` (`AT+TDC`), … `FUN_00002474` (Region helpers) | `docs/rebuild/AT_Handlers.md` |
 | Hardware & Power | `0x08007000–0x0800742C` | `FUN_00003000` (Init), `FUN_00003018` (STOP mode), `FUN_00003030` (Storage), `FUN_00003060` (Calibration) | `docs/rebuild/Hardware_Power.md`, `docs/rebuild/Calibration_Engine.md` |
