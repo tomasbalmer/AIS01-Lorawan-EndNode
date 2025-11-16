@@ -1,3 +1,6 @@
+# NOTE:
+# This file will be rewritten to reflect current dispatcher code.
+
 # Downlink Dispatcher (Opcode Table)
 
 ## Table Summary

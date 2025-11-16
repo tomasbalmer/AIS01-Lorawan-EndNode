@@ -1,3 +1,6 @@
+# NOTE:
+# To be aligned with new calibration pipeline.
+
 # Calibration / Configuration Apply Engine
 
 ## Overview

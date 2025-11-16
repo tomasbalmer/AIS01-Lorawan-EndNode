@@ -1,3 +1,6 @@
+# NOTE:
+# STOP-mode + RTC wake behavior will be rewritten soon.
+
 # Hardware & Power Services
 
 | Function | Address | Responsibility | Notes & References |

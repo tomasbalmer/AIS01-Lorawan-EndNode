@@ -1,3 +1,6 @@
+# NOTE:
+# Real scheduler behavior (systime + STOP-mode loop) will be documented here.
+
 # Scheduler & Duty Cycle Notes
 
 ## Overview
