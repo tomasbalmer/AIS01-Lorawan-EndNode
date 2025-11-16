@@ -163,6 +163,15 @@ typedef struct
     uint8_t size;
 } UplinkMacMirrorContext_t;
 
+typedef struct
+{
+    uint8_t batteryLevel;
+    uint16_t batteryMv;
+    uint32_t uptimeSec;
+    uint8_t sensorPowered;
+    uint8_t dataRate;
+} UplinkPowerProfileContext_t;
+
 /*
  * MAC-MIRROR FRAME FORMAT:
  * Byte 0  : 0xF2
@@ -170,5 +179,16 @@ typedef struct
  */
 bool UplinkEncoder_EncodeMacMirror(const UplinkMacMirrorContext_t *ctx,
                                    UplinkPayload_t *out);
+/*
+ * POWER PROFILE FRAME FORMAT (OEM 0xF3)
+ * Byte 0 : 0xF3
+ * Byte 1 : battery %
+ * Byte 2-3 : battery mV
+ * Byte 4-7 : uptime seconds (uint32 LE)
+ * Byte 8 : sensor powered
+ * Byte 9 : data rate
+ */
+bool UplinkEncoder_EncodePowerProfile(const UplinkPowerProfileContext_t *ctx,
+                                      UplinkPayload_t *out);
 
 #endif /* UPLINK_ENCODER_H */

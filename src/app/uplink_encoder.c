@@ -252,3 +252,34 @@ bool UplinkEncoder_EncodeMacMirror(const UplinkMacMirrorContext_t *ctx,
 
     return true;
 }
+
+bool UplinkEncoder_EncodePowerProfile(const UplinkPowerProfileContext_t *ctx,
+                                      UplinkPayload_t *out)
+{
+    const uint8_t required = 10U;
+
+    if ((ctx == NULL) || !UplinkEncoder_CheckBuffer(out, required))
+    {
+        return false;
+    }
+
+    uint8_t *b = out->buffer;
+
+    b[0] = 0xF3U;
+    b[1] = ctx->batteryLevel;
+
+    b[2] = (uint8_t)(ctx->batteryMv & 0xFFU);
+    b[3] = (uint8_t)((ctx->batteryMv >> 8) & 0xFFU);
+
+    uint32_t up = ctx->uptimeSec;
+    b[4] = (uint8_t)(up & 0xFFU);
+    b[5] = (uint8_t)((up >> 8) & 0xFFU);
+    b[6] = (uint8_t)((up >> 16) & 0xFFU);
+    b[7] = (uint8_t)((up >> 24) & 0xFFU);
+
+    b[8] = ctx->sensorPowered;
+    b[9] = ctx->dataRate;
+
+    out->size = required;
+    return true;
+}

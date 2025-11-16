@@ -120,6 +120,8 @@ static ATCmdResult_t ATCmd_HandleSensorStatsUplink(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleMacCmd(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleMacStat(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleMacMirrorUp(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandlePowerProfileUplink(int argc, char *argv[]);
+static ATCmdResult_t ATCmd_HandlePowerStat(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedMode(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleConfirmedStatus(int argc, char *argv[]);
 static ATCmdResult_t ATCmd_HandleAppPort(int argc, char *argv[]);
@@ -226,6 +228,8 @@ static const ATCmdEntry_t g_ATCmdTable[] = {
     { "AT+MACCMD", ATCmd_HandleMacCmd, "Send raw MAC cmd uplink (hex)" },
     { "AT+MACSTAT", ATCmd_HandleMacStat, "Get last MAC command" },
     { "AT+MACUP", ATCmd_HandleMacMirrorUp, "Send MAC-mirror uplink" },
+    { "AT+POWERUP", ATCmd_HandlePowerProfileUplink, "Send power profile uplink" },
+    { "AT+POWERSTAT", ATCmd_HandlePowerStat, "Get battery percent and mV" },
 
     /* Time Synchronization */
     { "AT+TIMEREQ", ATCmd_HandleTimeRequest, "Request time synchronization" },
@@ -1636,6 +1640,49 @@ static ATCmdResult_t ATCmd_HandleMacMirrorUp(int argc, char *argv[])
         return ATCmd_ReturnError();
     }
 
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandlePowerProfileUplink(int argc, char *argv[])
+{
+    (void)argv;
+
+    if (argc != 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    if (!LoRaWANApp_IsJoined())
+    {
+        ATCmd_SendResponse(ATCMD_RESP_NO_NET_JOINED);
+        return ATCMD_ERROR;
+    }
+
+    if (!LoRaWANApp_SendPowerProfileUplink())
+    {
+        return ATCmd_ReturnError();
+    }
+
+    ATCmd_SendResponse(ATCMD_RESP_OK);
+    return ATCMD_OK;
+}
+
+static ATCmdResult_t ATCmd_HandlePowerStat(int argc, char *argv[])
+{
+    (void)argv;
+
+    if (argc != 1)
+    {
+        return ATCmd_ReturnParamError();
+    }
+
+    uint8_t pct = Sensor_GetBatteryLevel();
+    uint16_t mv = BoardGetBatteryLevel();
+
+    ATCmd_SendFormattedResponse("+POWERSTAT:%u%%,%umV\r\n",
+                                (unsigned int)pct,
+                                (unsigned int)mv);
     ATCmd_SendResponse(ATCMD_RESP_OK);
     return ATCMD_OK;
 }

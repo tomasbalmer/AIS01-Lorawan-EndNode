@@ -96,6 +96,11 @@ extern "C"
     bool LoRaWANApp_SendMacMirrorUplink(void);
 
     /*!
+     * \brief Sends OEM Power Profile frame (0xF3)
+     */
+    bool LoRaWANApp_SendPowerProfileUplink(void);
+
+    /*!
      * \brief Processes LoRaMAC events (must be called in main loop)
      */
     void LoRaWANApp_Process(void);

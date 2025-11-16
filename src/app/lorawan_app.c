@@ -350,6 +350,29 @@ bool LoRaWANApp_SendMacMirrorUplink(void)
     return LoRaWANApp_SendEncoded(&payload);
 }
 
+bool LoRaWANApp_SendPowerProfileUplink(void)
+{
+    uint8_t buffer[16];
+    UplinkPayload_t payload = {
+        .buffer = buffer,
+        .maxSize = (uint8_t)sizeof(buffer),
+        .size = 0U};
+
+    UplinkPowerProfileContext_t ctx = {
+        .batteryLevel = Sensor_GetBatteryLevel(),
+        .batteryMv = BoardGetBatteryLevel(),
+        .uptimeSec = HAL_GetTick() / 1000U,
+        .sensorPowered = Sensor_IsPowered() ? 1U : 0U,
+        .dataRate = g_Settings.DataRate};
+
+    if (!UplinkEncoder_EncodePowerProfile(&ctx, &payload))
+    {
+        return false;
+    }
+
+    return LoRaWANApp_SendEncoded(&payload);
+}
+
 void LoRaWANApp_Process(void)
 {
     LoRaWAN_Process(&g_LoRaCtx);
